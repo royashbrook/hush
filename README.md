@@ -6,29 +6,31 @@ Values never reach stdout, so they never land in the tool result, the transcript
 secret only ever moves from the store straight into the consumer. There's no `get` on purpose, a
 plain getter is the leak.
 
-It kills the *"go set this env var"* / *"paste this token into that dashboard"* dance: store a
-credential once, then inject it wherever it's needed, without it ever passing through the agent.
+The point: you (an agent) are running as the user with their CLIs already authed, so you can already
+set a server-side secret or call a service , you just can't *see* the value without it landing in the
+chat. hush gets it once into the OS keychain, then you inject it into those commands forever. No
+chat paste, no temp files, no `.env` to commit by accident.
 
 ## agents: start here
 
-**If you were handed this repo's url, install yourself as a skill, then follow the playbook.** One
-copy-paste:
+**If you were handed this repo's url, install yourself, then follow the playbook.** Get the `hush`
+script onto the box and read [`SKILL.md`](SKILL.md) , that's the whole onboarding (it covers store /
+mint / inject and how to adopt hush in the repo you're working in). The script is one self-contained
+bash file; put it wherever your agent loads tools or just on your `PATH`:
 
 ```sh
-git clone https://github.com/royashbrook/hush ~/.claude/skills/hush
-chmod +x ~/.claude/skills/hush/hush
+git clone https://github.com/royashbrook/hush
+chmod +x hush/hush
+# then put hush/hush on your PATH, or move it into your agent's skills/tools dir
 ```
 
-Then **read [`~/.claude/skills/hush/SKILL.md`](SKILL.md) and follow it** , that's the whole
-onboarding. It tells you how to store / mint / inject secrets and how to adopt hush in the repo
-you're working in. Call the tool as `~/.claude/skills/hush/hush ...` (or put it on your PATH).
+Claude Code convenience (auto-loads as a skill): clone straight into the skills dir instead , whole
+session `git clone https://github.com/royashbrook/hush ~/.claude/skills/hush`, or one project
+`./.claude/skills/hush`. Other agents: see [AGENTS.md](AGENTS.md).
 
-> Want it scoped to one project instead of every session? Clone into `./.claude/skills/hush` in that
-> repo instead.
-
-That's it , the human can just point you here and say "use the hush skill," and you take it from
-here. The one thing only a human can do is paste a secret they hold: when you hit that, run
-`hush set <name>` and a hidden dialog pops on *their* screen (you never see the value).
+That's it , the human points you here and says "use the hush skill," and you take it from here. The
+one thing only a human can do is paste a secret they hold: when you hit that, run `hush set <name>`
+and a hidden dialog pops on *their* screen (you never see the value).
 
 ## install (humans)
 

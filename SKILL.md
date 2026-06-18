@@ -1,7 +1,7 @@
 ---
 name: hush
-description: Use whenever an agent needs to STORE, GENERATE, or USE a secret (API token, key, signing value, password) without ever exposing the plaintext. Replaces the "go set this env var / paste this token into that system" dance with one structured, OS-keychain-backed flow where the value goes straight from source into the consumer and never passes through the agent (no transcript, no logs, no cloud). Two add-paths: a value you GENERATED elsewhere (a vendor token, a PAT) gets pasted in once via a hidden prompt the agent can't see; a value that just needs to be STRONG+RANDOM (an operator key, a webhook signing secret) the agent generates and stores itself. Then it injects straight into the consumer (env var, command stdin, a 0600 file), never printed. Triggers: "store this token", "save this key", "add it to the keychain", "generate an operator/signing key", "use the X secret to call Y", or any moment an agent needs a credential to reach a service. macOS, Linux, and Windows backends built in; the never-print contract is portable beyond them.
-version: 1.1.0
+description: Use whenever an agent needs to STORE, GENERATE, or USE a secret (API token, key, signing value, password) without ever exposing the plaintext. Replaces the "go set this env var / paste this token into that system" dance with one structured, OS-keychain-backed flow where the value goes straight from source into the consumer and never passes through the agent (no transcript, no logs, no cloud). Two add-paths: a value you GENERATED elsewhere (a vendor token, a PAT) gets pasted in once via a hidden prompt the agent can't see; a value that just needs to be STRONG+RANDOM (an operator key, a webhook signing secret) the agent generates and stores itself. Then it injects straight into the consumer (an env var, or a command's stdin), never printed , so an agent running as the user, with their CLIs already authed, can set server-side secrets and call services without the value ever touching the chat or disk. Triggers: "store this token", "save this key", "add it to the keychain", "generate an operator/signing key", "use the X secret to call Y", or any moment an agent needs a credential to reach a service. macOS, Linux, and Windows backends built in; the never-print contract is portable beyond them.
+version: 1.2.0
 ---
 
 # hush
@@ -13,9 +13,22 @@ cloud. It only ever moves from the store straight into the consumer. There is de
 `get`**, because a plain getter is the leak. That single rule is the whole point of this skill, most
 secret helpers don't have it.
 
-The discipline it's really enforcing: stop the *"go set THIS env var"* / *"paste THIS token into
-THAT dashboard"* dance. Store a credential once, then inject it wherever it's needed, without it
-ever passing through the agent or the chat.
+## what this is actually for
+
+You're an agent running as the user, with their CLIs already authed (`gh`, `az`, `wrangler`, ...). So
+you can *already* set a server-side secret or call a service , the one thing you can't do is **see the
+value**. Every usual way to get it is bad: have the user paste it into the chat (now it's in the
+transcript), drop it in a temp file, or send them off to set it by hand , each one is a context-switch
+and a leak risk, and half the time the value is never written down, so next time you have to rotate
+the whole secret.
+
+hush is the single fix. **Get the value once** , the user pastes into a hidden dialog you pop, or you
+mint a random one yourself , it lands in the **OS keychain**, and from then on you inject it into
+those already-authed commands **forever**, no more pasting, no more waiting on the user. When they
+need it back or want to move it elsewhere, it's sitting in their keychain.
+
+It also beats a `.env` file: nothing lives in the repo, so nothing gets committed by accident , you
+set secrets server-side straight from the keychain.
 
 ## the tool
 
@@ -78,10 +91,19 @@ So a secret that doesn't need the human never blocks on the human.
 ```
 hush run NAME=VAR [N2=V2 ...] -- <cmd>   # fetch into env vars, exec <cmd> (value only in the child)
 hush pipe <name> -- <cmd>                # stream the value to <cmd>'s stdin
-hush file <name> <path>                  # write a 0600 file (refuses inside a git repo)
 hush list                                # NAMES only, never values
 hush rm   <name>                         # delete
 ```
+
+`run` and `pipe` are the whole game. **pipe** a value straight into an already-authed CLI to set a
+server-side secret (`hush pipe gh-pat -- gh secret set X`, `hush pipe key -- npx wrangler secret put
+X`); **run** a command with the value in its environment to call a service (`hush run TOKEN=t --
+curl ...`). The value lives only in that child process , never on disk, never printed.
+
+> **Escape hatch , `hush file <name> <path>`.** A few tools can *only* read a credential from a file
+> path (a service-account JSON, a cert, a kubeconfig). For those, and only those, `hush file` writes a
+> 0600 file (and refuses inside a git repo). Don't reach for it as a convenience , writing a secret to
+> disk is the exact dance hush exists to kill. Inject via `run`/`pipe` whenever the tool allows it.
 
 ## if a human needs to read a value
 
