@@ -1,6 +1,6 @@
 ---
 name: hush
-description: Use whenever an agent needs to STORE, GENERATE, or USE a secret (API token, key, signing value, password) without ever exposing the plaintext. Replaces the "go set this env var / paste this token into that system" dance with one structured, OS-keychain-backed flow where the value goes straight from source into the consumer and never passes through the agent (no transcript, no logs, no cloud). Two add-paths: a value you GENERATED elsewhere (a vendor token, a PAT) gets pasted in once via a hidden prompt the agent can't see; a value that just needs to be STRONG+RANDOM (an operator key, a webhook signing secret) the agent generates and stores itself. Then it injects straight into the consumer (env var, command stdin, a 0600 file), never printed. Triggers: "store this token", "save this key", "add it to the keychain", "generate an operator/signing key", "use the X secret to call Y", or any moment an agent needs a credential to reach a service. macOS + Linux backends built in; the never-print contract is portable to any platform.
+description: Use whenever an agent needs to STORE, GENERATE, or USE a secret (API token, key, signing value, password) without ever exposing the plaintext. Replaces the "go set this env var / paste this token into that system" dance with one structured, OS-keychain-backed flow where the value goes straight from source into the consumer and never passes through the agent (no transcript, no logs, no cloud). Two add-paths: a value you GENERATED elsewhere (a vendor token, a PAT) gets pasted in once via a hidden prompt the agent can't see; a value that just needs to be STRONG+RANDOM (an operator key, a webhook signing secret) the agent generates and stores itself. Then it injects straight into the consumer (env var, command stdin, a 0600 file), never printed. Triggers: "store this token", "save this key", "add it to the keychain", "generate an operator/signing key", "use the X secret to call Y", or any moment an agent needs a credential to reach a service. macOS, Linux, and Windows backends built in; the never-print contract is portable beyond them.
 version: 1.0.0
 ---
 
@@ -24,13 +24,15 @@ ever passing through the agent or the chat.
 Store backends are auto-detected:
 - **macOS** → Keychain (`security`), with a native hidden-field paste dialog for `set`.
 - **Linux** → libsecret (`secret-tool`; `apt install libsecret-tools` / `dnf install libsecret`).
-- **anything else (Windows, etc.)** → no built-in backend, but **keep the contract** and use your
-  platform's secret store (see *Other platforms* below).
+- **Windows** → a per-user DPAPI-encrypted store via PowerShell (`win/hush-backend.ps1`), driven from
+  git-bash / WSL. Stored items are DPAPI ciphertext (CurrentUser), useless to any other user.
+- **anything else** → no built-in backend, but **keep the contract** and use your platform's secret
+  store (see *Other platforms* below).
 
 Namespace is configurable with `HUSH_NS` (default `hush`), so multiple projects/agents don't collide.
 The namespace prefixes every stored item (e.g. the macOS keychain item is named `hush:<name>`), so a
-human can find them by searching the namespace. A plaintext NAMES index (names aren't secret) lives
-at `~/.config/hush/names` so `list` is cheap.
+human can find them by searching the namespace. `list` reads the names straight from the store, so
+there's no separate index that can drift out of sync.
 
 ## getting a secret INTO the store (the two add-paths)
 
@@ -42,8 +44,9 @@ Pick by where the value comes from:
    hush set <name>
    ```
    On macOS this pops a hidden-field dialog; elsewhere it's a silent terminal prompt. You paste, the
-   value goes prompt → keychain. **To rotate/update** a secret later, just run `hush set <name>`
-   again, it overwrites in place.
+   value goes prompt → keychain. For scripts/CI, pipe it instead (still off argv):
+   `printf '%s' "$VAL" | hush set <name>`. **To rotate/update** a secret later, just run
+   `hush set <name>` again, it overwrites in place.
 
 2. **The value just needs to be strong + random** (an operator key, a signing secret). The agent
    generates and stores it itself, no human in the loop:
@@ -84,7 +87,8 @@ one. The agent's job is to **tell the human how to read it themselves**, not to 
   `hush:<name>` item, and click *Show password* (it'll ask for your login password).
 - **Linux**: the human runs `secret-tool lookup hush <namespace> name <name>` in their own terminal
   (or browses it in Seahorse / the GNOME keyring GUI).
-- **Windows / other**: open the value in your platform's secret store (Credential Manager, etc.).
+- **Windows**: the human runs `powershell -File win/hush-backend.ps1 get <name>` (it DPAPI-decrypts
+  and prints the value for them; only works as the same user who stored it).
 
 The agent relays these steps; it does not run them and pipe the output back.
 
@@ -106,9 +110,9 @@ hush run OPKEY=app-operator-key -- curl -H "Authorization: Bearer $OPKEY" https:
 
 ## other platforms
 
-The backends are mac + linux, but the **contract is the product**, not the backend. On Windows, use
-PowerShell SecretManagement (`Set-Secret` / `Get-Secret`) or Credential Manager. On anything else,
-use whatever secret store you have. The rules to keep, on any platform:
+The built-in backends are mac + linux + windows, but the **contract is the product**, not the
+backend. On any platform without a built-in backend, use whatever secret store you have (a cloud
+secret manager, your distro's keyring, etc.). The rules to keep, on any platform:
 
 1. **never print the plaintext** (not to stdout, not to logs, not to the chat).
 2. **inject, don't read** — pass the value into the consumer (env / stdin / a 0600 file), never into

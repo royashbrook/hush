@@ -1,0 +1,31 @@
+name: test
+
+# MANUAL ONLY — never runs on push/PR (macos + windows runners burn minutes).
+# fire it from the Actions tab or:  gh workflow run test.yml
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: install libsecret + keyring (linux only)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus-x11
+
+      - name: run tests
+        shell: bash
+        run: |
+          chmod +x hush test/test.sh
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            # libsecret needs a running secret service: a dbus session + an unlocked (blank-pw) keyring.
+            dbus-run-session -- bash -c "echo '' | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1; ./test/test.sh"
+          else
+            ./test/test.sh
+          fi

@@ -20,19 +20,21 @@ chmod +x ~/.claude/skills/hush/hush
 
 Or just grab the single `hush` script and put it on your PATH.
 
-Backends: macOS Keychain + Linux libsecret (`secret-tool`) are built in. On other platforms keep the
-same contract with your OS secret store (see [SKILL.md](SKILL.md)).
+Backends: macOS Keychain, Linux libsecret (`secret-tool`), and Windows DPAPI (via PowerShell) are
+built in. On other platforms keep the same contract with your OS secret store (see [SKILL.md](SKILL.md)).
+Cross-OS tested in CI (manual `workflow_dispatch`, all three runners).
 
 ## quick start
 
 ```sh
 hush set my-vendor-token                      # paste a value you hold (hidden prompt)
+printf '%s' "$TOK" | hush set my-vendor-token # ...or pipe it in (scripts/CI), still off argv
 hush mint app-operator-key                    # generate + store a random one
 hush run TOKEN=my-vendor-token -- some-cmd    # inject into a command, never printed
 hush list                                     # names only, never values
 ```
 
-Namespace with `HUSH_NS` (default `agent-secret`). Full docs + the portable contract: [SKILL.md](SKILL.md).
+Namespace with `HUSH_NS` (default `hush`). Full docs + the portable contract: [SKILL.md](SKILL.md).
 
 ## not a vault
 
