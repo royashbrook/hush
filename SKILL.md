@@ -108,6 +108,35 @@ hush pipe app-operator-key -- npx wrangler secret put OPERATOR_KEY
 hush run OPKEY=app-operator-key -- curl -H "Authorization: Bearer $OPKEY" https://.../endpoint
 ```
 
+## adopting hush in an existing project (the first run)
+
+A new project is trivial, `mint`/`set` secrets as you create them. An existing project is the real
+onboarding: hush starts empty while the secrets already live in scattered places (`.env`, wrangler,
+gh, the user's head), so it's useless until seeded. The agent's job is to get from "not using hush"
+to "one command injects everything":
+
+1. **find the secrets the project uses.** look in `.env` / `.env.*` / `.dev.vars`, `wrangler.jsonc`
+   (`vars` + secret bindings), `process.env.X` / `import.meta.env.X` in the code, `gh secret list`,
+   the README. collect the ENVVAR names it needs.
+2. **get each value into hush, without printing it:**
+   - already in a local `.env`: `grep '^FOO=' .env | cut -d= -f2- | hush set foo` (piped, never echoed), or `hush set foo` and the user pastes.
+   - already stored in hush: reuse it.
+   - should be fresh + random: `hush mint foo`.
+3. **write a `.hush` manifest** in the repo root mapping each env var to its hush secret name (names
+   aren't secret, so it commits):
+   ```
+   ns=lifescored            # optional first line: a per-project namespace
+   DATABASE_URL=db-url
+   GEMINI_API_KEY=gemini-key
+   ```
+4. **switch the dev/deploy command to** `hush exec -- <cmd>`. it reads `.hush`, injects every mapped
+   secret into the environment, and runs the command. a fresh agent on this repo just runs that, no
+   rediscovery needed.
+5. **stop committing the plaintext** (gitignore or delete the `.env`) now that hush holds it.
+
+That's the whole arc: scattered secrets → seeded in hush → declared in `.hush` → one `hush exec`
+from then on. (`hush exec --file <path>` if the manifest isn't at the repo root.)
+
 ## extending hush to the tools you already use
 
 The friction this kills: *"go create this key, then paste it into GitHub / Wrangler / your vault, then

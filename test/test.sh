@@ -46,6 +46,13 @@ got="$("$HUSH" pipe t-set -- cat 2>/dev/null)"
 # 5. file writes the value (skip perms-number check, varies by OS)
 "$HUSH" file t-set "$tmpf" >/dev/null 2>&1 && [ "$(cat "$tmpf")" = "$SENTINEL" ] && ok "file write" || bad "file write"
 
+# 5b. exec: a .hush manifest injects mapped secrets, then runs the command
+manifest="${tmpf}.hush"
+printf '# test manifest\nns=%s\nXV=t-set\n' "$HUSH_NS" > "$manifest"
+got="$("$HUSH" exec --file "$manifest" -- sh -c 'printf "%s" "$XV"' 2>/dev/null)"
+[ "$got" = "$SENTINEL" ] && ok "exec (manifest inject)" || bad "exec manifest mismatch (got: $got)"
+rm -f "$manifest" 2>/dev/null
+
 # 6. mint generates + stores a random value; run reads it back as 64 hex chars
 "$HUSH" mint t-mint >/dev/null 2>&1 && ok "mint" || bad "mint"
 mintlen="$("$HUSH" run V=t-mint -- sh -c 'printf "%s" "${#V}"' 2>/dev/null)"
