@@ -102,7 +102,7 @@ b_delete() {
 b_list() {
   case "$BACKEND" in
     mac)     security dump-keychain 2>/dev/null | sed -n "s/.*\"svce\"<blob>=\"$NS:\(.*\)\"\$/\1/p" | sort -u ;;
-    linux)   secret-tool search --all hush "$NS" 2>/dev/null | sed -n 's/^attribute\.name = //p' | sort -u ;;
+    linux)   secret-tool search --all hush "$NS" 2>&1 | sed -n 's/^attribute\.name = //p' | sort -u ;;
     windows) winps list 2>/dev/null | sort -u ;;
   esac
 }

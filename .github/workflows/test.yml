@@ -1,16 +1,22 @@
 name: test
 
 # MANUAL ONLY — never runs on push/PR (macos + windows runners burn minutes).
-# fire it from the Actions tab or:  gh workflow run test.yml
+# fire it from the Actions tab or:  gh workflow run test.yml [-f os=ubuntu-latest]
 on:
   workflow_dispatch:
+    inputs:
+      os:
+        description: which runner(s) to test
+        type: choice
+        default: all
+        options: [all, ubuntu-latest, macos-latest, windows-latest]
 
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON(inputs.os == 'all' && '["ubuntu-latest","macos-latest","windows-latest"]' || format('["{0}"]', inputs.os)) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
