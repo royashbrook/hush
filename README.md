@@ -50,7 +50,9 @@ hush run TOKEN=my-vendor-token -- some-cmd    # inject into a command, never pri
 hush list                                     # names only, never values
 ```
 
-Namespace with `HUSH_NS` (default `hush`). Full docs + the portable contract: [SKILL.md](SKILL.md).
+Naming: keep the default `hush` namespace and **prefix names by project** (`blame-cf-token`,
+`lifescored-gemini-key`) so one keychain search for `hush` finds everything. `HUSH_NS` is only for a
+genuinely separate store, not per-project. Full docs + the portable contract: [SKILL.md](SKILL.md).
 
 ## not a vault
 

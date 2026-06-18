@@ -1,7 +1,7 @@
 ---
 name: hush
 description: Use whenever an agent needs to STORE, GENERATE, or USE a secret (API token, key, signing value, password) without ever exposing the plaintext. Replaces the "go set this env var / paste this token into that system" dance with one structured, OS-keychain-backed flow where the value goes straight from source into the consumer and never passes through the agent (no transcript, no logs, no cloud). Two add-paths: a value you GENERATED elsewhere (a vendor token, a PAT) gets pasted in once via a hidden prompt the agent can't see; a value that just needs to be STRONG+RANDOM (an operator key, a webhook signing secret) the agent generates and stores itself. Then it injects straight into the consumer (an env var, or a command's stdin), never printed , so an agent running as the user, with their CLIs already authed, can set server-side secrets and call services without the value ever touching the chat or disk. Triggers: "store this token", "save this key", "add it to the keychain", "generate an operator/signing key", "use the X secret to call Y", or any moment an agent needs a credential to reach a service. macOS, Linux, and Windows backends built in; the never-print contract is portable beyond them.
-version: 1.2.0
+version: 1.2.1
 ---
 
 # hush
@@ -42,10 +42,19 @@ Store backends are auto-detected:
 - **anything else** → no built-in backend, but **keep the contract** and use your platform's secret
   store (see *Other platforms* below).
 
-Namespace is configurable with `HUSH_NS` (default `hush`), so multiple projects/agents don't collide.
-The namespace prefixes every stored item (e.g. the macOS keychain item is named `hush:<name>`), so a
-human can find them by searching the namespace. `list` reads the names straight from the store, so
-there's no separate index that can drift out of sync.
+### naming convention: one namespace, project-prefixed names
+
+**Keep the default `hush` namespace and prefix each secret's NAME by project** , `blame-cf-token`,
+`lifescored-gemini-key`. That way a human finds *every* hush secret across *every* project with one
+keychain search for `hush`, and projects still don't collide (the name prefix separates them). The
+namespace prefixes the stored item (the macOS keychain item is `hush:<name>`), and `list` reads names
+straight from the store, so there's no separate index to drift.
+
+**Do NOT use a per-project `HUSH_NS`.** It's tempting (`HUSH_NS=blame`), but it breaks the
+one-search findability above , each project's secrets hide in their own namespace. `HUSH_NS` exists
+only for a genuinely *separate* store: a different agent, or an isolated environment you deliberately
+want kept out of your normal `hush` search. That's rare. Per-project separation is the name prefix's
+job, not the namespace's.
 
 ## getting a secret INTO the store (the two add-paths)
 
@@ -156,15 +165,17 @@ to "one command injects everything":
 
    **(a) the run command reads them from the environment** (a node / vite / python dev-or-deploy that
    uses `process.env.X`). write a `.hush` manifest in the repo root mapping each env var to its hush
-   secret name (names aren't secret, so it commits):
+   secret name (names aren't secret, so it commits) , use **project-prefixed names**, default
+   namespace:
    ```
-   ns=lifescored            # optional first line: a per-project namespace
-   DATABASE_URL=db-url
-   GEMINI_API_KEY=gemini-key
+   DATABASE_URL=lifescored-db-url
+   GEMINI_API_KEY=lifescored-gemini-key
    ```
    then **switch the dev/deploy command to** `hush exec -- <cmd>` , it reads `.hush`, injects every
    mapped secret, and runs the command. a fresh agent just runs that, no rediscovery.
-   (`hush exec --file <path>` if the manifest isn't at the repo root.)
+   (`hush exec --file <path>` if the manifest isn't at the repo root. a manifest *can* set a separate
+   store with an `ns=<namespace>` first line, but that's the rare separate-store case , per the naming
+   convention above, default to the `hush` namespace + prefixed names, not a per-project `ns`.)
 
    **(b) nothing in the run path reads the environment** , e.g. a Cloudflare Worker (secrets are
    *bindings* via `platform.env`, populated from the dashboard / `.dev.vars`, not the process
