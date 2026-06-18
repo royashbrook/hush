@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+# hush — a secret store for AI agents, with one hard rule:
+#
+#   THE AGENT NEVER SEES THE PLAINTEXT.
+#
+# A secret value must never reach stdout (and therefore never the tool result, the durable
+# transcript, or the cloud). Every subcommand either captures a value WITHOUT printing it
+# (set / mint) or injects it straight into a consumer WITHOUT printing it (run / pipe / file).
+# There is deliberately NO `get` that prints a value, because a plain getter is the leak.
+#
+# The point: stop the "go set THIS env var / paste THIS token into THAT system" dance. Store a
+# credential once, then inject it wherever it's needed, without it ever passing through the agent.
+#
+# Store backends (auto-detected): macOS Keychain (`security`), Linux libsecret (`secret-tool`).
+# On any other platform, keep the contract and use your OS secret store (see SKILL.md).
+# Namespace is configurable via HUSH_NS (default: agent-secret). A plaintext NAMES index (names
+# are not secret) lives at ${XDG_CONFIG_HOME:-~/.config}/hush/names so `list` is cheap.
+#
+# NOT a security vault: an agent with shell access can read+write this store. It's structure that
+# keeps plaintext out of the transcript, not a lock against a hostile process.
+
+set -uo pipefail
+
+NS="${HUSH_NS:-agent-secret}"
+INDEX_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hush"
+INDEX="$INDEX_DIR/names"
+
+die() { printf 'hush: %s\n' "$1" >&2; exit 1; }
+
+case "$(uname -s 2>/dev/null)" in
+  Darwin) BACKEND=mac ;;
+  Linux)  BACKEND=linux ;;
+  MINGW*|MSYS*|CYGWIN*) BACKEND=windows ;;
+  *) BACKEND=unknown ;;
+esac
+
+unsupported() {
+  die "no built-in backend for this platform ($(uname -s 2>/dev/null)). hush ships macOS (Keychain) + linux (secret-tool/libsecret). On windows use PowerShell SecretManagement (Set-Secret/Get-Secret) or Credential Manager; anywhere else use your OS secret store. Keep the contract: never print the value, inject it; no getter. (see SKILL.md)"
+}
+
+svc() { printf '%s:%s' "$NS" "$1"; }
+
+# --- backend ops: store/fetch/exists/delete, none ever print the value to stdout ---
+backend_check() {
+  case "$BACKEND" in
+    mac)   command -v security    >/dev/null 2>&1 || die "the macOS 'security' CLI is required." ;;
+    linux) command -v secret-tool >/dev/null 2>&1 || die "secret-tool (libsecret) is required on linux: apt install libsecret-tools / dnf install libsecret. Or keep the contract and use 'pass' or your store." ;;
+    *)     unsupported ;;
+  esac
+}
+
+b_exists() {
+  case "$BACKEND" in
+    mac)   security find-generic-password -s "$(svc "$1")" >/dev/null 2>&1 ;;
+    linux) [ -n "$(secret-tool lookup hush "$NS" name "$1" 2>/dev/null)" ] ;;
+  esac
+}
+
+# store <name> <value> — value is a shell local, never echoed.
+b_store() {
+  local name="$1" value="$2"
+  case "$BACKEND" in
+    mac)   security add-generic-password -U -a "$name" -s "$(svc "$name")" -w "$value" >/dev/null 2>&1 \
+             || die "keychain store failed for '$name'" ;;
+    linux) printf '%s' "$value" | secret-tool store --label="$(svc "$name")" hush "$NS" name "$name" >/dev/null 2>&1 \
+             || die "secret-tool store failed for '$name'" ;;
+  esac
+  index_add "$name"
+}
+
+# fetch <name> <outvar> — reads value into the named caller variable, never prints it.
+b_fetch() {
+  local name="$1" __out="$2" __v
+  b_exists "$name" || die "no secret named '$name' (try: hush list)"
+  case "$BACKEND" in
+    mac)   __v="$(security find-generic-password -s "$(svc "$name")" -w 2>/dev/null)" || die "keychain read failed for '$name'" ;;
+    linux) __v="$(secret-tool lookup hush "$NS" name "$name" 2>/dev/null)" || die "secret-tool read failed for '$name'" ;;
+  esac
+  printf -v "$__out" '%s' "$__v"
+}
+
+b_delete() {
+  case "$BACKEND" in
+    mac)   security delete-generic-password -s "$(svc "$1")" >/dev/null 2>&1 ;;
+    linux) secret-tool clear hush "$NS" name "$1" >/dev/null 2>&1 ;;
+  esac
+}
+
+index_add() { mkdir -p "$INDEX_DIR"; { [ -f "$INDEX" ] && cat "$INDEX"; printf '%s\n' "$1"; } | sort -u > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"; }
+index_rm()  { [ -f "$INDEX" ] || return 0; grep -vxF "$1" "$INDEX" > "$INDEX.tmp" 2>/dev/null; mv "$INDEX.tmp" "$INDEX"; }
+
+# read a value WITHOUT echoing it: GUI dialog on mac, silent tty prompt elsewhere. value -> outvar.
+prompt_value() {
+  local name="$1" __out="$2" __v=""
+  if [ "$BACKEND" = mac ] && command -v osascript >/dev/null 2>&1; then
+    __v="$(osascript -e "try
+  text returned of (display dialog \"Paste the value for secret: $name\" default answer \"\" with hidden answer with title \"hush set\")
+end try" 2>/dev/null)" || true
+  else
+    printf 'paste value for "%s" (input hidden): ' "$name" >&2
+    read -rs __v < /dev/tty || true
+    printf '\n' >&2
+  fi
+  printf -v "$__out" '%s' "$__v"
+}
+
+usage() {
+  cat >&2 <<'EOF'
+hush — a secret store for AI agents. values are never printed.
+
+  hush set  <name>                 store a value you ALREADY hold (hidden prompt; agent stays blind)
+  hush mint <name> [--bytes N] [--force]
+                                   generate a strong random value (default 32 bytes hex), store it
+  hush run  NAME=VAR [N2=V2 ...] -- <cmd...>
+                                   fetch secret(s) into env vars, exec <cmd> (value only in the child)
+  hush pipe <name> -- <cmd...>     stream the value to <cmd>'s stdin (e.g. wrangler secret put)
+  hush file <name> <path>          write the value to a 0600 file (refuses inside a git repo)
+  hush list                        list NAMES only (never values)
+  hush rm   <name>                 delete a secret
+
+Rule: a value is never sent to stdout. There is no `get`. Namespace via HUSH_NS (default agent-secret).
+EOF
+  exit "${1:-2}"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  set)
+    backend_check
+    name="${1:-}"; [ -n "$name" ] || usage
+    prompt_value "$name" value
+    [ -n "${value:-}" ] || die "no value entered (cancelled or empty); nothing stored."
+    b_store "$name" "$value"; unset value
+    printf 'hush: stored %s (value not shown).\n' "$name"
+    ;;
+  mint)
+    backend_check
+    name="${1:-}"; shift || true
+    [ -n "${name:-}" ] || usage
+    bytes=32; force=0
+    while [ $# -gt 0 ]; do case "$1" in
+      --bytes) bytes="${2:?--bytes needs a number}"; shift 2;;
+      --force) force=1; shift;;
+      *) die "mint: unknown arg '$1'";;
+    esac; done
+    if b_exists "$name" && [ "$force" -ne 1 ]; then
+      die "'$name' already exists; refusing to overwrite a live key. Use --force to replace."
+    fi
+    if command -v openssl >/dev/null 2>&1; then
+      value="$(openssl rand -hex "$bytes")" || die "openssl failed"
+    else
+      value="$(head -c "$bytes" /dev/urandom | od -An -tx1 | tr -d ' \n')" || die "no openssl and /dev/urandom failed"
+    fi
+    b_store "$name" "$value"; unset value
+    printf 'hush: minted %s (%d bytes hex, value not shown).\n' "$name" "$bytes"
+    ;;
+  run)
+    backend_check
+    pairs=()
+    while [ $# -gt 0 ] && [ "$1" != "--" ]; do
+      case "$1" in
+        *=*) nm="${1#*=}"; var="${1%%=*}"; b_fetch "$nm" __val; pairs+=("$var=$__val"); unset __val;;
+        *) die "run: expected NAME=VAR before --, got '$1'";;
+      esac; shift
+    done
+    [ "${1:-}" = "--" ] || die "run: missing -- before the command"
+    shift; [ $# -gt 0 ] || die "run: no command after --"
+    exec env "${pairs[@]}" "$@"
+    ;;
+  pipe)
+    backend_check
+    name="${1:-}"; [ -n "$name" ] || usage; shift
+    [ "${1:-}" = "--" ] || die "pipe: missing -- before the command"
+    shift; [ $# -gt 0 ] || die "pipe: no command after --"
+    b_fetch "$name" __val
+    printf '%s' "$__val" | "$@"; rc=$?; unset __val; exit $rc
+    ;;
+  file)
+    backend_check
+    name="${1:-}"; path="${2:-}"
+    { [ -n "$name" ] && [ -n "$path" ]; } || usage
+    if git -C "$(dirname "$path")" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      die "refusing to write a secret inside a git repo ($path). Use /tmp or a non-tracked dir."
+    fi
+    b_fetch "$name" __val
+    ( umask 077; printf '%s' "$__val" > "$path" ) || die "write failed: $path"
+    chmod 600 "$path" 2>/dev/null || true; unset __val
+    printf 'hush: wrote %s to %s (0600, value not shown).\n' "$name" "$path"
+    ;;
+  list)
+    [ -f "$INDEX" ] && sort -u "$INDEX" || printf '(no secrets stored yet)\n'
+    ;;
+  rm)
+    backend_check
+    name="${1:-}"; [ -n "$name" ] || usage
+    b_delete "$name" || die "no secret named '$name'"
+    index_rm "$name"
+    printf 'hush: removed %s.\n' "$name"
+    ;;
+  ""|-h|--help|help) usage 0;;
+  *) die "unknown subcommand '$cmd' (try: hush help)";;
+esac
