@@ -27,9 +27,10 @@ Store backends are auto-detected:
 - **anything else (Windows, etc.)** → no built-in backend, but **keep the contract** and use your
   platform's secret store (see *Other platforms* below).
 
-Namespace is configurable with `HUSH_NS` (default `agent-secret`), so multiple projects/agents don't
-collide. A plaintext NAMES index (names aren't secret) lives at `~/.config/hush/names` so `list` is
-cheap.
+Namespace is configurable with `HUSH_NS` (default `hush`), so multiple projects/agents don't collide.
+The namespace prefixes every stored item (e.g. the macOS keychain item is named `hush:<name>`), so a
+human can find them by searching the namespace. A plaintext NAMES index (names aren't secret) lives
+at `~/.config/hush/names` so `list` is cheap.
 
 ## getting a secret INTO the store (the two add-paths)
 
@@ -41,12 +42,13 @@ Pick by where the value comes from:
    hush set <name>
    ```
    On macOS this pops a hidden-field dialog; elsewhere it's a silent terminal prompt. You paste, the
-   value goes prompt → keychain.
+   value goes prompt → keychain. **To rotate/update** a secret later, just run `hush set <name>`
+   again, it overwrites in place.
 
 2. **The value just needs to be strong + random** (an operator key, a signing secret). The agent
    generates and stores it itself, no human in the loop:
    ```
-   hush mint <name>            # openssl rand -hex 32 by default; --bytes N to change
+   hush mint <name>            # openssl rand -hex 32 by default; --bytes N to change (alias: gen)
    ```
 
 ## autonomy — proceed, or ask the human?
@@ -72,6 +74,19 @@ hush file <name> <path>                  # write a 0600 file (refuses inside a g
 hush list                                # NAMES only, never values
 hush rm   <name>                         # delete
 ```
+
+## if a human needs to read a value
+
+The agent never prints a secret, there's no `get`. But a human sometimes legitimately needs to see
+one. The agent's job is to **tell the human how to read it themselves**, not to fetch and print it:
+
+- **macOS**: open the Keychain Access app, search your namespace (default `hush`), open the
+  `hush:<name>` item, and click *Show password* (it'll ask for your login password).
+- **Linux**: the human runs `secret-tool lookup hush <namespace> name <name>` in their own terminal
+  (or browses it in Seahorse / the GNOME keyring GUI).
+- **Windows / other**: open the value in your platform's secret store (Credential Manager, etc.).
+
+The agent relays these steps; it does not run them and pipe the output back.
 
 ## worked examples
 

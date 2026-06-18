@@ -13,7 +13,9 @@
 #
 # Store backends (auto-detected): macOS Keychain (`security`), Linux libsecret (`secret-tool`).
 # On any other platform, keep the contract and use your OS secret store (see SKILL.md).
-# Namespace is configurable via HUSH_NS (default: agent-secret). A plaintext NAMES index (names
+# Namespace is configurable via HUSH_NS (default: hush) -- it prefixes every stored item (e.g. the
+# macOS keychain item is named "hush:<name>"), so a human can find them by searching the namespace.
+# A plaintext NAMES index (names
 # are not secret) lives at ${XDG_CONFIG_HOME:-~/.config}/hush/names so `list` is cheap.
 #
 # NOT a security vault: an agent with shell access can read+write this store. It's structure that
@@ -21,7 +23,7 @@
 
 set -uo pipefail
 
-NS="${HUSH_NS:-agent-secret}"
+NS="${HUSH_NS:-hush}"
 INDEX_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hush"
 INDEX="$INDEX_DIR/names"
 
@@ -109,7 +111,8 @@ usage() {
 hush — a secret store for AI agents. values are never printed.
 
   hush set  <name>                 store a value you ALREADY hold (hidden prompt; agent stays blind)
-  hush mint <name> [--bytes N] [--force]
+                                   re-run on an existing name to ROTATE/update it in place.
+  hush mint <name> [--bytes N] [--force]   (alias: gen)
                                    generate a strong random value (default 32 bytes hex), store it
   hush run  NAME=VAR [N2=V2 ...] -- <cmd...>
                                    fetch secret(s) into env vars, exec <cmd> (value only in the child)
@@ -118,7 +121,10 @@ hush — a secret store for AI agents. values are never printed.
   hush list                        list NAMES only (never values)
   hush rm   <name>                 delete a secret
 
-Rule: a value is never sent to stdout. There is no `get`. Namespace via HUSH_NS (default agent-secret).
+Rule: a value is never sent to stdout. There is no `get`. Namespace via HUSH_NS (default hush).
+If a HUMAN needs to read a value, they do it themselves (the agent never prints it):
+  macOS  : open Keychain Access, search "$NS", open the "$NS:<name>" item, Show password.
+  linux  : the human runs:  secret-tool lookup hush "$NS" name <name>
 EOF
   exit "${1:-2}"
 }
@@ -133,7 +139,7 @@ case "$cmd" in
     b_store "$name" "$value"; unset value
     printf 'hush: stored %s (value not shown).\n' "$name"
     ;;
-  mint)
+  mint|gen)
     backend_check
     name="${1:-}"; shift || true
     [ -n "${name:-}" ] || usage
