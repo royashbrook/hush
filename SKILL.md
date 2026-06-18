@@ -108,6 +108,32 @@ hush pipe app-operator-key -- npx wrangler secret put OPERATOR_KEY
 hush run OPKEY=app-operator-key -- curl -H "Authorization: Bearer $OPKEY" https://.../endpoint
 ```
 
+## extending hush to the tools you already use
+
+The friction this kills: *"go create this key, then paste it into GitHub / Wrangler / your vault, then
+tell me when it's there."* If the agent already has the CLI for that tool, it shouldn't hand that
+back, it should just do it. Two directions:
+
+1. **Push a hush-held secret INTO another tool** (it's already built, via `pipe`). Anything with a
+   CLI that takes the value on stdin is a consumer:
+   ```
+   hush pipe deploy-token -- gh secret set DEPLOY_TOKEN          # into GitHub Actions
+   hush pipe api-key      -- npx wrangler secret put API_KEY     # into a Worker
+   hush pipe db-pass      -- fly secrets import                  # etc.
+   ```
+   So "store it, then put it in X" becomes one agent step, no human relay. `mint` + `pipe` together
+   means the agent can generate a strong secret AND install it into the service without the value
+   ever being seen or pasted.
+
+2. **Augment hush to use a tool as the STORE itself.** If the user already lives in a secret manager
+   with a CLI (1Password `op`, `pass`, HashiCorp `vault`, Doppler, Bitwarden `bw`), an agent can
+   offer to add a backend so hush reads/writes through that instead of the OS keychain. hush doesn't
+   ship every adapter, but the backend is a small, swappable layer (`b_store` / `b_fetch` /
+   `b_exists` / `b_delete` / `b_list` in the script) , an agent can wire a new one locally (a local,
+   user-owned edit, that's fine). **Any added backend keeps the same contract**: never print the
+   value, inject-only, no getter. The base just has to exist so the agent stops asking the human to
+   shuttle secrets by hand.
+
 ## other platforms
 
 The built-in backends are mac + linux + windows, but the **contract is the product**, not the
