@@ -169,11 +169,18 @@ can't read it back , so if the original wasn't kept, your only move next time is
 secret. The usual stopgaps are worse: pasting it into Notes/TextEdit "just for a sec," or letting an
 agent drop it in a `/tmp` file to read-and-push, then forgetting it exists.
 
-hush is the durable, **owner-readable** backstop. The pattern is: the agent mints or receives the
-value, stores it in hush, AND pipes it into the write-only destination , so the value is never lost
-and never has to be rotated just because nobody wrote it down. When *you* need it later, you read it
-from your own keychain (see *if a human needs to read a value*), not from a sticky note. That's the
-whole point even when there's no `hush exec` in sight.
+hush is the **owner-readable backstop** , a consistent *first* home, not the final one. The pattern:
+the agent mints or receives the value, stores it in hush, AND pipes it into the write-only
+destination, so the value is never lost or force-rotated just because nobody wrote it down. When
+*you* need it later you read it from your own keychain (see *if a human needs to read a value*), not
+a sticky note.
+
+Treat it as an **on-ramp.** Two wins land immediately, even with no `hush exec` in sight: you can
+generate secrets securely from day one, and on an old project with values scattered across `.env`s,
+dashboards, and your head, a few pastes get them (a) centralized and (b) agent-usable from then on.
+For a durable, shareable home, **sync them onward** into a real secret manager , see *extending
+hush* for wiring a 1Password / vault / pass backend. hush gets you consistent; the sync makes it
+permanent.
 
 ## extending hush to the tools you already use
 
