@@ -50,5 +50,21 @@ switch ($verb) {
     }
     exit 0
   }
+  'prompt' {
+    # pop a masked GUI box on the user's screen, write the entered value to stdout (the bash caller
+    # captures it; hush never prints it). interactive only; needs a desktop session.
+    Add-Type -AssemblyName PresentationFramework
+    $w = New-Object Windows.Window
+    $w.Title = 'hush set'; $w.SizeToContent = 'WidthAndHeight'; $w.WindowStartupLocation = 'CenterScreen'; $w.Topmost = $true
+    $sp = New-Object Windows.Controls.StackPanel; $sp.Margin = 12
+    $lbl = New-Object Windows.Controls.TextBlock; $lbl.Text = "paste the value for secret: $name"; $lbl.Margin = '0,0,0,8'
+    $pb = New-Object Windows.Controls.PasswordBox; $pb.MinWidth = 320
+    $ok = New-Object Windows.Controls.Button; $ok.Content = 'OK'; $ok.Margin = '0,8,0,0'; $ok.IsDefault = $true
+    $ok.Add_Click({ $w.DialogResult = $true })
+    [void]$sp.Children.Add($lbl); [void]$sp.Children.Add($pb); [void]$sp.Children.Add($ok)
+    $w.Content = $sp; [void]$pb.Focus()
+    if ($w.ShowDialog()) { [Console]::Out.Write($pb.Password) }
+    exit 0
+  }
   default { Write-Error "unknown verb '$verb'"; exit 2 }
 }

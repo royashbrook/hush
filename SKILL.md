@@ -38,15 +38,20 @@ there's no separate index that can drift out of sync.
 
 Pick by where the value comes from:
 
-1. **You made the token elsewhere** (a vendor key, a GitHub PAT, anything from a portal). Store it
-   once, the agent never sees it:
+1. **A value the user holds** (a vendor key from a portal, a GitHub PAT). The AGENT runs:
    ```
    hush set <name>
    ```
-   On macOS this pops a hidden-field dialog; elsewhere it's a silent terminal prompt. You paste, the
-   value goes prompt → keychain. For scripts/CI, pipe it instead (still off argv):
-   `printf '%s' "$VAL" | hush set <name>`. **To rotate/update** a secret later, just run
-   `hush set <name>` again, it overwrites in place.
+   and a hidden paste dialog pops on the **user's screen** (macOS dialog, Linux zenity/kdialog,
+   Windows masked box). The user pastes into it , they never leave the conversation , and the command
+   blocks until they do; then the agent continues. The agent never sees the value. **This is the
+   collaborative path: the agent drives it, the user just answers the popup.** Don't tell the user to
+   "go run a command and let you know" , run `hush set <name>` yourself and wait for the dialog.
+   - **re-ask** (user pasted the wrong thing, "ask me again for the second token"): the agent just
+     runs `hush set <name>` again , it overwrites in place. Same for rotating any secret later.
+   - **scripted/CI**: pipe it instead , `printf '%s' "$VAL" | hush set <name>` (still off argv).
+   - the user running `hush set` in their *own* terminal is only a far fallback (they can already do
+     that); the whole point is the agent-driven popup so nobody leaves the chat.
 
 2. **The value just needs to be strong + random** (an operator key, a signing secret). The agent
    generates and stores it itself, no human in the loop:
@@ -119,9 +124,12 @@ to "one command injects everything":
    (`vars` + secret bindings), `process.env.X` / `import.meta.env.X` in the code, `gh secret list`,
    the README. collect the ENVVAR names it needs.
 2. **get each value into hush, without printing it:**
-   - already in a local `.env`: `grep '^FOO=' .env | cut -d= -f2- | hush set foo` (piped, never echoed), or `hush set foo` and the user pastes.
+   - already in a local `.env`: `grep '^FOO=' .env | cut -d= -f2- | hush set foo` (piped, never echoed).
    - already stored in hush: reuse it.
    - should be fresh + random: `hush mint foo`.
+   - **only the user has it** (a portal/dashboard key, nothing local): the AGENT runs `hush set foo`,
+     which pops the paste dialog for the user , do NOT tell them to run a command and report back.
+     they paste into the popup and you continue.
 3. **write a `.hush` manifest** in the repo root mapping each env var to its hush secret name (names
    aren't secret, so it commits):
    ```

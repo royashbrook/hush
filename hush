@@ -107,19 +107,31 @@ b_list() {
   esac
 }
 
-# read a value WITHOUT echoing it: stdin if piped (scripts/CI), else GUI dialog on mac / silent tty prompt.
+# Collect a value WITHOUT echoing it. The agent-collaborative path: the AGENT runs `hush set <name>`,
+# this pops a GUI paste dialog on the USER's screen, the user pastes there (never leaving the chat),
+# and the command blocks until they do. Order: a real pipe (scripts/CI) -> GUI dialog (mac/linux/
+# windows) -> a tty prompt -> give up. The pipe check is `-p` (a real fifo), NOT just "not a tty",
+# so an agent whose stdin is /dev/null still gets the dialog instead of reading empty input.
 prompt_value() {
-  local name="$1" __out="$2" __v=""
-  if [ ! -t 0 ]; then
-    __v="$(cat)"                       # piped in: printf '%s' "$val" | hush set <name>
+  local name="$1" __out="$2" __v="" msg="paste the value for secret: $name"
+  if [ -p /dev/stdin ]; then
+    __v="$(cat)"                                                   # piped: printf '%s' "$val" | hush set <name>
   elif [ "$BACKEND" = mac ] && command -v osascript >/dev/null 2>&1; then
     __v="$(osascript -e "try
-  text returned of (display dialog \"Paste the value for secret: $name\" default answer \"\" with hidden answer with title \"hush set\")
+  text returned of (display dialog \"$msg\" default answer \"\" with hidden answer with title \"hush set\")
 end try" 2>/dev/null)" || true
-  else
+  elif command -v zenity >/dev/null 2>&1; then
+    __v="$(zenity --entry --hide-text --title="hush set" --text="$msg" 2>/dev/null)" || true
+  elif command -v kdialog >/dev/null 2>&1; then
+    __v="$(kdialog --password "$msg" 2>/dev/null)" || true
+  elif [ "$BACKEND" = windows ] && command -v powershell.exe >/dev/null 2>&1; then
+    __v="$(winps prompt "$name" 2>/dev/null)" || true
+  elif [ -t 0 ]; then
     printf 'paste value for "%s" (input hidden): ' "$name" >&2
     read -rs __v < /dev/tty || true
     printf '\n' >&2
+  else
+    die "set: no pipe, GUI, or terminal to collect the value. pipe it (printf '%s' \"\$V\" | hush set $name) or run where a dialog/tty is available."
   fi
   printf -v "$__out" '%s' "$__v"
 }
