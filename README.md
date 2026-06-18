@@ -54,4 +54,6 @@ Namespace with `HUSH_NS` (default `hush`). Full docs + the portable contract: [S
 
 An agent with shell access can read+write this store, so it's not a lock against a hostile process.
 It's structure that keeps plaintext out of the transcript and makes "store once, inject everywhere"
-the easy path. MIT licensed.
+the easy path. It's also only as durable as the machine it's on (a local keychain) , back the machine
+up, or sync onward into a real secret manager, and don't make hush the only copy of a secret you
+can't regenerate. MIT licensed.

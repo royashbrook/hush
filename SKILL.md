@@ -236,3 +236,9 @@ This is **not a security vault.** An agent with shell access can read and write 
 not a lock against a hostile process. It's structure that keeps plaintext out of the transcript and
 out of the back-and-forth, and makes "store a credential once, inject it everywhere" the easy path.
 That's it, and that's enough to remove a real, constant friction.
+
+It's also **only as durable as the machine it lives on.** The store is a local keychain, so a machine
+backup (Time Machine and the like) covers it, but if the disk dies and nothing's backed up, it's
+gone. So back the machine up, or sync onward into a real secret manager (see *extending hush*) , and
+don't treat hush as the *only* copy of a secret you can't regenerate. (No runtime nagging about this;
+it's just the honest expectation to set.)
