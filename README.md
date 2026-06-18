@@ -52,7 +52,9 @@ hush list                                     # names only, never values
 
 Naming: keep the default `hush` namespace and **prefix names by project** (`blame-cf-token`,
 `lifescored-gemini-key`) so one keychain search for `hush` finds everything. `HUSH_NS` is only for a
-genuinely separate store, not per-project. Full docs + the portable contract: [SKILL.md](SKILL.md).
+genuinely separate store, not per-project. Need to fix an existing name? `hush rename <old> <new>`
+moves the value internally (never re-asked, never printed). Full docs + the portable contract:
+[SKILL.md](SKILL.md).
 
 ## not a vault
 

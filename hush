@@ -152,6 +152,9 @@ hush — a secret store for AI agents. values are never printed.
   hush pipe <name> -- <cmd...>     stream the value to <cmd>'s stdin (e.g. wrangler secret put)
   hush file <name> <path>          write the value to a 0600 file (refuses inside a git repo)
   hush list                        list NAMES only, read straight from the store (never values)
+  hush rename <old> <new> [--force]   (alias: mv)
+                                   move a secret to a new name (e.g. to add a project prefix). value
+                                   is moved INTERNALLY, never re-asked from the human, never printed.
   hush rm   <name>                 delete a secret
 
 Rule: a value is never sent to stdout. There is no `get`. Namespace via HUSH_NS (default hush).
@@ -270,6 +273,27 @@ case "$cmd" in
     name="${1:-}"; [ -n "$name" ] || usage
     b_delete "$name"
     printf 'hush: removed %s.\n' "$name"
+    ;;
+  rename|mv)
+    backend_check
+    old="${1:-}"; new="${2:-}"
+    { [ -n "$old" ] && [ -n "$new" ]; } || usage
+    shift 2; force=0
+    while [ $# -gt 0 ]; do case "$1" in
+      --force) force=1; shift;;
+      *) die "rename: unknown arg '$1'";;
+    esac; done
+    [ "$old" = "$new" ] && die "rename: old and new names are the same ('$old')."
+    b_exists "$old" || die "no secret named '$old' (try: hush list)"
+    if b_exists "$new" && [ "$force" -ne 1 ]; then
+      die "'$new' already exists; refusing to clobber it. Use --force to overwrite."
+    fi
+    # move the value internally: fetch into a local (never printed), store under the new name,
+    # delete the old. NO human, NO re-paste, the value never leaves the store.
+    b_fetch "$old" __val
+    b_store "$new" "$__val"; unset __val
+    b_delete "$old"
+    printf 'hush: renamed %s -> %s (value not shown).\n' "$old" "$new"
     ;;
   ""|-h|--help|help) usage 0;;
   *) die "unknown subcommand '$cmd' (try: hush help)";;

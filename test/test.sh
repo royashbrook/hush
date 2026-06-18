@@ -13,7 +13,7 @@ tmpf="$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/hush-citest-$$.tmp")"
 
 ok()   { printf 'ok   - %s\n' "$1"; }
 bad()  { printf 'FAIL - %s\n' "$1"; fails=$((fails+1)); }
-cleanup() { "$HUSH" rm t-set  >/dev/null 2>&1; "$HUSH" rm t-mint >/dev/null 2>&1; rm -f "$tmpf" 2>/dev/null; }
+cleanup() { "$HUSH" rm t-set  >/dev/null 2>&1; "$HUSH" rm t-mint >/dev/null 2>&1; "$HUSH" rm t-renamed >/dev/null 2>&1; rm -f "$tmpf" 2>/dev/null; }
 trap cleanup EXIT
 
 # assert that hush's OWN output (stdout+stderr) for a command never contains the sentinel
@@ -62,6 +62,14 @@ mintlen="$("$HUSH" run V=t-mint -- sh -c 'printf "%s" "${#V}"' 2>/dev/null)"
 printf '%s' "$ROT" | "$HUSH" set t-set >/dev/null 2>&1
 got="$("$HUSH" run V=t-set -- sh -c 'printf "%s" "$V"' 2>/dev/null)"
 [ "$got" = "$ROT" ] && ok "rotate (re-set)" || bad "rotate failed"
+
+# 7b. rename moves the value internally: old name gone, value kept, nothing leaked, no re-ask
+ren="$("$HUSH" rename t-set t-renamed 2>&1)" && ok "rename" || bad "rename"
+printf '%s' "$ren" | grep -qF "$ROT" && bad "LEAK: rename printed the value" || ok "no leak: rename"
+got="$("$HUSH" run V=t-renamed -- sh -c 'printf "%s" "$V"' 2>/dev/null)"
+[ "$got" = "$ROT" ] && ok "rename keeps the value" || bad "rename lost the value (got: $got)"
+"$HUSH" list 2>&1 | grep -qx "t-set" && bad "rename left the old name behind" || ok "rename removed old name"
+"$HUSH" rename t-renamed t-set >/dev/null 2>&1   # rename back so the rm step below targets t-set
 
 # 8. rm removes it from the store
 "$HUSH" rm t-set >/dev/null 2>&1 && ok "rm" || bad "rm"

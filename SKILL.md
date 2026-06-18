@@ -1,7 +1,7 @@
 ---
 name: hush
 description: Use whenever an agent needs to STORE, GENERATE, or USE a secret (API token, key, signing value, password) without ever exposing the plaintext. Replaces the "go set this env var / paste this token into that system" dance with one structured, OS-keychain-backed flow where the value goes straight from source into the consumer and never passes through the agent (no transcript, no logs, no cloud). Two add-paths: a value you GENERATED elsewhere (a vendor token, a PAT) gets pasted in once via a hidden prompt the agent can't see; a value that just needs to be STRONG+RANDOM (an operator key, a webhook signing secret) the agent generates and stores itself. Then it injects straight into the consumer (an env var, or a command's stdin), never printed , so an agent running as the user, with their CLIs already authed, can set server-side secrets and call services without the value ever touching the chat or disk. Triggers: "store this token", "save this key", "add it to the keychain", "generate an operator/signing key", "use the X secret to call Y", or any moment an agent needs a credential to reach a service. macOS, Linux, and Windows backends built in; the never-print contract is portable beyond them.
-version: 1.2.2
+version: 1.3.0
 ---
 
 # hush
@@ -58,6 +58,12 @@ only for a genuinely *separate* store: a different agent, or an isolated environ
 want kept out of your normal `hush` search. That's rare. Per-project separation is the name prefix's
 job, not the namespace's.
 
+**To fix or re-home a name, use `hush rename <old> <new>` (alias `mv`) , it needs no human.** It
+moves the value inside the store (fetch → store-new → delete-old), never prints it, and never
+re-asks. So adding a missing prefix is one command: `hush rename gemini-api-key lifescored-gemini-key`.
+**NEVER `rm` a secret and re-ask the human to paste a value that's already in the store** , that's the
+exact pointless dance hush exists to kill. If it's already stored, move it; don't beg for it again.
+
 ## getting a secret INTO the store (the two add-paths)
 
 Pick by where the value comes from:
@@ -103,6 +109,7 @@ So a secret that doesn't need the human never blocks on the human.
 hush run NAME=VAR [N2=V2 ...] -- <cmd>   # fetch into env vars, exec <cmd> (value only in the child)
 hush pipe <name> -- <cmd>                # stream the value to <cmd>'s stdin
 hush list                                # NAMES only, never values
+hush rename <old> <new>                  # move to a new name (value moved INTERNALLY, never re-asked)
 hush rm   <name>                         # delete
 ```
 
