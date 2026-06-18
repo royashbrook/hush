@@ -1,7 +1,7 @@
 ---
 name: hush
 description: Use whenever an agent needs to STORE, GENERATE, or USE a secret (API token, key, signing value, password) without ever exposing the plaintext. Replaces the "go set this env var / paste this token into that system" dance with one structured, OS-keychain-backed flow where the value goes straight from source into the consumer and never passes through the agent (no transcript, no logs, no cloud). Two add-paths: a value you GENERATED elsewhere (a vendor token, a PAT) gets pasted in once via a hidden prompt the agent can't see; a value that just needs to be STRONG+RANDOM (an operator key, a webhook signing secret) the agent generates and stores itself. Then it injects straight into the consumer (env var, command stdin, a 0600 file), never printed. Triggers: "store this token", "save this key", "add it to the keychain", "generate an operator/signing key", "use the X secret to call Y", or any moment an agent needs a credential to reach a service. macOS, Linux, and Windows backends built in; the never-print contract is portable beyond them.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # hush
@@ -130,20 +130,50 @@ to "one command injects everything":
    - **only the user has it** (a portal/dashboard key, nothing local): the AGENT runs `hush set foo`,
      which pops the paste dialog for the user , do NOT tell them to run a command and report back.
      they paste into the popup and you continue.
-3. **write a `.hush` manifest** in the repo root mapping each env var to its hush secret name (names
-   aren't secret, so it commits):
+3. **pick how the secrets reach the consumer , two shapes, by how the app reads them:**
+
+   **(a) the run command reads them from the environment** (a node / vite / python dev-or-deploy that
+   uses `process.env.X`). write a `.hush` manifest in the repo root mapping each env var to its hush
+   secret name (names aren't secret, so it commits):
    ```
    ns=lifescored            # optional first line: a per-project namespace
    DATABASE_URL=db-url
    GEMINI_API_KEY=gemini-key
    ```
-4. **switch the dev/deploy command to** `hush exec -- <cmd>`. it reads `.hush`, injects every mapped
-   secret into the environment, and runs the command. a fresh agent on this repo just runs that, no
-   rediscovery needed.
-5. **stop committing the plaintext** (gitignore or delete the `.env`) now that hush holds it.
+   then **switch the dev/deploy command to** `hush exec -- <cmd>` , it reads `.hush`, injects every
+   mapped secret, and runs the command. a fresh agent just runs that, no rediscovery.
+   (`hush exec --file <path>` if the manifest isn't at the repo root.)
 
-That's the whole arc: scattered secrets → seeded in hush → declared in `.hush` → one `hush exec`
-from then on. (`hush exec --file <path>` if the manifest isn't at the repo root.)
+   **(b) nothing in the run path reads the environment** , e.g. a Cloudflare Worker (secrets are
+   *bindings* via `platform.env`, populated from the dashboard / `.dev.vars`, not the process
+   environment), or a repo that only deploys from CI. there's no run command to wrap, so skip the
+   manifest , `hush exec` would just inject into a process that never looks. the adoption here is
+   **store once, then pipe straight into the write-only destination:**
+   ```
+   hush pipe gemini-key   -- npx wrangler secret put GEMINI_API_KEY   # into the Worker
+   hush pipe deploy-token -- gh secret set CLOUDFLARE_API_TOKEN       # into GitHub Actions
+   ```
+   this is a first-class outcome, not a lesser one , see *why store it at all* below.
+
+4. **stop committing the plaintext** (gitignore or delete the `.env` / `.dev.vars`) now that hush
+   holds it.
+
+Work through this and **report the result, don't narrate each command.** End on one of two things:
+"it's wired, here's what changed," or "i need one value only you have , paste it" and drive the
+`hush set` dialog yourself. Don't hand the human a list of commands to go run.
+
+## why store it at all (if it's already in Cloudflare / GitHub)
+
+Because those are **write-only.** Once a value is a Worker secret or a GitHub Actions secret, you
+can't read it back , so if the original wasn't kept, your only move next time is to rotate the whole
+secret. The usual stopgaps are worse: pasting it into Notes/TextEdit "just for a sec," or letting an
+agent drop it in a `/tmp` file to read-and-push, then forgetting it exists.
+
+hush is the durable, **owner-readable** backstop. The pattern is: the agent mints or receives the
+value, stores it in hush, AND pipes it into the write-only destination , so the value is never lost
+and never has to be rotated just because nobody wrote it down. When *you* need it later, you read it
+from your own keychain (see *if a human needs to read a value*), not from a sticky note. That's the
+whole point even when there's no `hush exec` in sight.
 
 ## extending hush to the tools you already use
 
