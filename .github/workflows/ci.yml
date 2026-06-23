@@ -1,0 +1,23 @@
+name: ci
+
+# the suite on every push to main, ubuntu only (cheap) , for a live badge.
+# the full mac + linux + windows matrix stays manual in test.yml (those runners burn minutes).
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: install libsecret + keyring
+        run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus-x11
+
+      - name: run tests
+        shell: bash
+        run: |
+          chmod +x hush test/test.sh
+          # libsecret needs a running secret service: a dbus session + an unlocked (blank-pw) keyring.
+          dbus-run-session -- bash -c "echo '' | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1; ./test/test.sh"

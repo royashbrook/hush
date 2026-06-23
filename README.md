@@ -8,6 +8,7 @@
 <p align="center"><em>a secret store for AI agents , the one with no <code>get</code>.</em></p>
 
 <p align="center">
+  <a href="https://github.com/royashbrook/hush/actions/workflows/ci.yml"><img src="https://github.com/royashbrook/hush/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/license-MIT-1f3a34?style=flat-square" alt="MIT">
   <img src="https://img.shields.io/badge/runs%20on-mac%20%C2%B7%20linux%20%C2%B7%20windows-1f3a34?style=flat-square" alt="cross-platform">
   <img src="https://img.shields.io/badge/get-none-1f3a34?style=flat-square" alt="no get">
