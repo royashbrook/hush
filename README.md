@@ -1,4 +1,21 @@
-# hush
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo.svg" width="180" alt="hush">
+  </picture>
+</p>
+
+<p align="center"><em>a secret store for AI agents , the one with no <code>get</code>.</em></p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-1f3a34?style=flat-square" alt="MIT">
+  <img src="https://img.shields.io/badge/runs%20on-mac%20%C2%B7%20linux%20%C2%B7%20windows-1f3a34?style=flat-square" alt="cross-platform">
+  <img src="https://img.shields.io/badge/get-none-1f3a34?style=flat-square" alt="no get">
+</p>
+
+<p align="center"><strong>get a secret once into the OS keychain, then inject it into commands forever , the value never hits stdout, the transcript, or the cloud.</strong></p>
+
+---
 
 A secret store for AI agents, with one hard rule: **the agent never sees the plaintext.**
 
