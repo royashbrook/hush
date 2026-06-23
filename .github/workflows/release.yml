@@ -1,0 +1,33 @@
+name: release
+
+# publish @royashbrook/hush to npm on a v* tag, gated on the test suite passing first (which needs the
+# headless keyring rig, same as ci.yml). scoped package -> --access public + publishConfig.access.
+# needs repo secret NPM_TOKEN (an npm "Automation" token). published version = package.json's version,
+# so bump package.json + SKILL.md's version together, then tag the matching v<version>.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: install libsecret + keyring
+        run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus-x11
+
+      - name: test
+        shell: bash
+        run: |
+          chmod +x hush test/test.sh
+          dbus-run-session -- bash -c "echo '' | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1; ./test/test.sh"
+
+      - name: publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

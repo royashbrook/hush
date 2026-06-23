@@ -1,0 +1,31 @@
+{
+  "name": "@royashbrook/hush",
+  "version": "1.3.0",
+  "description": "a secret store for AI agents with one rule: the agent never sees the plaintext. get a secret once into the OS keychain, then inject it into commands forever. no get, cross-platform, MIT.",
+  "bin": {
+    "hush": "hush"
+  },
+  "files": [
+    "hush",
+    "win/hush-backend.ps1",
+    "SKILL.md",
+    "AGENTS.md"
+  ],
+  "repository": "github:royashbrook/hush",
+  "homepage": "https://github.com/royashbrook/hush#readme",
+  "bugs": "https://github.com/royashbrook/hush/issues",
+  "keywords": [
+    "secrets",
+    "secrets-management",
+    "keychain",
+    "credentials",
+    "agent-skill",
+    "ai",
+    "cli",
+    "security"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}
