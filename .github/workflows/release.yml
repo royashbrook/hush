@@ -1,12 +1,17 @@
 name: release
 
 # publish @royashbrook/hush to npm on a v* tag, gated on the test suite passing first (which needs the
-# headless keyring rig, same as ci.yml). scoped package -> --access public + publishConfig.access.
-# needs repo secret NPM_TOKEN (an npm "Automation" token). published version = package.json's version,
-# so bump package.json + SKILL.md's version together, then tag the matching v<version>.
+# headless keyring rig, same as ci.yml). auth = npm Trusted Publishing (OIDC) , no stored token; requires
+# the trusted publisher for @royashbrook/hush to be configured on npmjs.com (this repo + this workflow).
+# scoped -> --access public. published version = package.json's version, so bump package.json + SKILL.md's
+# version together, then tag the matching v<version>.
 on:
   push:
     tags: ["v*"]
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   publish:
@@ -18,6 +23,9 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
+      - name: npm >= 11.5.1 (trusted publishing / OIDC)
+        run: npm install -g npm@latest
+
       - name: install libsecret + keyring
         run: sudo apt-get update && sudo apt-get install -y libsecret-tools gnome-keyring dbus-x11
 
@@ -27,7 +35,5 @@ jobs:
           chmod +x hush test/test.sh
           dbus-run-session -- bash -c "echo '' | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1; ./test/test.sh"
 
-      - name: publish
+      - name: publish (via OIDC)
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
