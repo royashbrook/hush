@@ -11,7 +11,7 @@
     "SKILL.md",
     "AGENTS.md"
   ],
-  "repository": "github:royashbrook/hush",
+  "repository": { "type": "git", "url": "git+https://github.com/royashbrook/hush.git" },
   "homepage": "https://github.com/royashbrook/hush#readme",
   "bugs": "https://github.com/royashbrook/hush/issues",
   "keywords": [
