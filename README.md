@@ -42,6 +42,9 @@ chmod +x hush/hush
 # then put hush/hush on your PATH, or move it into your agent's skills/tools dir
 ```
 
+or run it straight from npm without cloning: `npx @royashbrook/hush <cmd>` (mac/linux; on windows use the
+clone, the orchestrator is bash).
+
 Claude Code convenience (auto-loads as a skill): clone straight into the skills dir instead , whole
 session `git clone https://github.com/royashbrook/hush ~/.claude/skills/hush`, or one project
 `./.claude/skills/hush`. Other agents: see [AGENTS.md](AGENTS.md).
