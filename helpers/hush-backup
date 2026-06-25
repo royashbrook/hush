@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# hush-backup , encrypted, off-machine backup (+ restore) of the hush secret store.
+#
+# Optional helper, mac + iCloud specific. NOT part of core hush. It composes the public hush CLI
+# (`hush list` + `hush pipe`); it does not touch hush's internals.
+#
+# WHY: a hush store lives only in the local OS keychain, so wipe = re-provision. This makes an
+# AES256 gpg copy that iCloud Drive syncs off-machine.
+#
+# THE KEY MODEL: the symmetric passphrase IS a strong random key stored in hush under
+# `hush-backup-key` (mint it: `hush mint hush-backup-key`). So nothing weak to remember:
+#   --auto    : a launchd/cron job pulls the key FROM hush and runs unattended (no dialog).
+#   --restore : you paste the key into a dialog to decrypt (from the copy you stowed).
+# RECOVERY CAVEAT: the key lives in the same keychain being backed up, so after a wipe it is gone
+# too. Keep ONE copy of `hush-backup-key` somewhere that survives a wipe (iCloud Keychain / Passwords
+# app, a password manager, printed). That copy is the master, and the iCloud file is useless without it.
+#
+# NEVER-PRINT CONTRACT HOLDS. Enumerate names with `hush list`; `hush pipe <name> -- base64` streams
+# each value straight into the bundle pipe and on into gpg. Plaintext goes keychain -> gpg -> ciphertext,
+# never to stdout, the transcript, or unencrypted disk. The key (in --auto) flows `hush pipe -> gpg fd`
+# via process substitution, never printed. Interactive passphrase is collected via a hidden macOS dialog.
+#
+# See helpers/RESTORE-hush-backup.md for the full recovery runbook (raw gpg, no hush needed).
+#
+# Usage:
+#   hush-backup                 # interactive backup (hidden passphrase dialog)
+#   hush-backup --auto          # unattended backup keyed from hush (for launchd/cron)
+#   hush-backup --restore <f>   # decrypt <f> and re-set each secret into hush
+#   hush-backup --help
+#
+# Env knobs (override for testing / other setups):
+#   HUSH_BACKUP_DIR   dest folder (default: iCloud Drive/hush-backups)
+#   HUSH_BACKUP_KEY   hush secret name used as the key in --auto (default: hush-backup-key)
+#   HUSH_BACKUP_KEEP  retention: keep this many newest backups (default: 30)
+
+set -uo pipefail
+
+ICLOUD="$HOME/Library/Mobile Documents/com~apple~CloudDocs"
+DEST_DIR="${HUSH_BACKUP_DIR:-$ICLOUD/hush-backups}"
+KEY_NAME="${HUSH_BACKUP_KEY:-hush-backup-key}"
+KEEP="${HUSH_BACKUP_KEEP:-30}"
+
+die() { printf 'hush-backup: %s\n' "$1" >&2; exit 1; }
+log() { printf 'hush-backup: %s\n' "$1"; }
+
+command -v hush >/dev/null 2>&1 || die "hush is not on PATH"
+command -v gpg  >/dev/null 2>&1 || die "gpg is not installed"
+
+GPG_ENC=(--batch --yes --pinentry-mode loopback --passphrase-fd 3
+         --symmetric --cipher-algo AES256 --s2k-digest-algo SHA512 --s2k-count 65011712)
+GPG_DEC=(--batch --yes --pinentry-mode loopback --passphrase-fd 3 --quiet -d)
+
+# Hidden passphrase via a native dialog. Returns ONLY into the caller's var; never echoed/argv/stdout.
+ask_pass() { # $1 = prompt
+  osascript \
+    -e "display dialog \"$1\" default answer \"\" with hidden answer with title \"hush backup\" buttons {\"Cancel\",\"OK\"} default button \"OK\"" \
+    -e 'text returned of result' 2>/dev/null
+}
+
+# Write "name<TAB>base64(value)\n" for every hush secret to stdout. Values transit the pipe only.
+emit_bundle() {
+  local names n
+  names="$(hush list 2>/dev/null | sed '/^[[:space:]]*$/d')" || return 1
+  [ -n "$names" ] || return 2
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    printf '%s\t' "$n"
+    hush pipe "$n" -- base64 | tr -d '\n' || return 7   # tr: one line per value (GNU base64 wraps on encode)
+    printf '\n'
+  done <<EOF
+$names
+EOF
+}
+
+# Retention: keep newest $KEEP backups, delete older.
+prune() {
+  local old
+  old="$(ls -t "$DEST_DIR"/hush-backup-*.gpg 2>/dev/null | tail -n +"$((KEEP + 1))")" || return 0
+  [ -n "$old" ] || return 0
+  printf '%s\n' "$old" | while IFS= read -r f; do [ -n "$f" ] && rm -f "$f"; done
+  log "pruned $(printf '%s\n' "$old" | grep -c .) old backup(s), keeping newest $KEEP"
+}
+
+out_path() { printf '%s/hush-backup-%s.gpg' "$DEST_DIR" "$(date '+%Y-%m-%d-%H%M%S')"; }
+
+mode="backup"; infile=""
+case "${1:-}" in
+  --auto)    mode="auto" ;;
+  --restore) mode="restore"; infile="${2:-}" ;;
+  --help|-h) sed -n '2,40p' "$0"; exit 0 ;;
+  "") ;;
+  *) die "unknown arg: $1  (no args = interactive backup; --auto; --restore <file>)" ;;
+esac
+
+mkdir -p "$DEST_DIR" 2>/dev/null || die "could not create $DEST_DIR"
+
+case "$mode" in
+  backup)
+    pass="$(ask_pass "Backup passphrase. You will need this (or the hush-backup-key) to restore.")"
+    [ -n "$pass" ] || die "no passphrase entered (cancelled)"
+    pass2="$(ask_pass "Re-enter to confirm.")"
+    [ "$pass" = "$pass2" ] || die "passphrases did not match, nothing written"
+    out="$(out_path)"; tmp="$(mktemp)" || die "mktemp failed"
+    trap 'rm -f "$tmp"' EXIT
+    emit_bundle | gpg "${GPG_ENC[@]}" -o "$tmp" 3<<<"$pass" || die "encryption failed, nothing written"
+    [ -s "$tmp" ] || die "empty output, aborted"
+    mv "$tmp" "$out" || die "could not place backup"; trap - EXIT
+    prune
+    log "encrypted $(hush list | grep -c .) secret(s) to:"; printf '  %s\n' "$out"
+    log "restore: hush-backup --restore \"$out\""
+    ;;
+
+  auto)
+    # Unattended: the key comes from hush. Verify it exists first, else an empty fd would encrypt
+    # with an empty passphrase.
+    hush list 2>/dev/null | grep -qxF "$KEY_NAME" \
+      || die "key '$KEY_NAME' not in hush. mint it once: hush mint $KEY_NAME (then stow a copy)"
+    out="$(out_path)"; tmp="$(mktemp)" || die "mktemp failed"
+    trap 'rm -f "$tmp"' EXIT
+    emit_bundle | gpg "${GPG_ENC[@]}" -o "$tmp" 3< <(hush pipe "$KEY_NAME" -- cat) \
+      || die "encryption failed, nothing written"
+    [ -s "$tmp" ] || die "empty output, aborted"
+    mv "$tmp" "$out" || die "could not place backup"; trap - EXIT
+    prune
+    log "auto backup: $(hush list | grep -c .) secret(s) -> $out"
+    ;;
+
+  restore)
+    [ -n "$infile" ] || die "usage: hush-backup --restore <file.gpg>"
+    [ -f "$infile" ] || die "no such file: $infile"
+    pass="$(ask_pass "Passphrase / hush-backup-key to RESTORE from $(basename "$infile").")"
+    [ -n "$pass" ] || die "no passphrase entered (cancelled)"
+    bundle="$(gpg "${GPG_DEC[@]}" "$infile" 3<<<"$pass")" \
+      || die "decryption failed (wrong key or corrupt file)"
+    count="$(printf '%s\n' "$bundle" | grep -c .)"
+    [ "$count" -gt 0 ] || die "decrypted but contained no entries"
+    confirm="$(ask_pass "Restore $count secret(s) into hush? OVERWRITES same-named ones. Type RESTORE to confirm.")"
+    [ "$confirm" = "RESTORE" ] || die "not confirmed, nothing restored"
+    n=0
+    while IFS=$'\t' read -r name b64; do
+      [ -n "$name" ] || continue
+      printf '%s' "$b64" | base64 -d | hush set "$name" >/dev/null 2>&1 \
+        || die "failed to restore '$name' (stopped; $n already done)"
+      n=$((n + 1))
+    done <<<"$bundle"
+    log "restored $n secret(s) into the hush store."
+    ;;
+esac

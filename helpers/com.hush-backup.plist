@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Example launchd job: run hush-backup --auto daily. macOS only.
+
+  Customize the two paths below (the script location), then install:
+    cp helpers/com.hush-backup.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.hush-backup.plist
+  Run once now / test:   launchctl kickstart -k gui/$(id -u)/com.hush-backup
+  Stop + remove:         launchctl bootout gui/$(id -u)/com.hush-backup
+                         rm ~/Library/LaunchAgents/com.hush-backup.plist
+
+  Requires hush-backup-key already minted (`hush mint hush-backup-key`) and a durable copy of it
+  stowed (see RESTORE-hush-backup.md). PATH is explicit because launchd gives a minimal one; point
+  it at wherever hush and gpg live (`command -v hush`, `command -v gpg`).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.hush-backup</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/ABSOLUTE/PATH/TO/hush-backup</string>
+    <string>--auto</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>12</integer>
+    <key>Minute</key>
+    <integer>47</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/hush-backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/hush-backup.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
