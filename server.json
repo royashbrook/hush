@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.royashbrook/hush",
+  "name": "com.royashbrook/hush",
   "title": "hush",
   "description": "A secret store for AI agents: the agent never sees the plaintext.",
   "repository": { "url": "https://github.com/royashbrook/hush", "source": "github" },
