@@ -113,7 +113,9 @@ case "$mode" in
   auto)
     # Unattended: the key comes from hush. Verify it exists first, else an empty fd would encrypt
     # with an empty passphrase.
-    hush list 2>/dev/null | grep -qxF "$KEY_NAME" \
+    # NB: no `hush list | grep -q` , grep -q exits on match, SIGPIPEs hush list, and `set -o pipefail`
+    # turns that into a false failure once the store is big enough. read into a here-string instead.
+    grep -qxF "$KEY_NAME" <<<"$(hush list 2>/dev/null)" \
       || die "key '$KEY_NAME' not in hush. mint it once: hush mint $KEY_NAME (then stow a copy)"
     out="$(out_path)"; tmp="$(mktemp)" || die "mktemp failed"
     trap 'rm -f "$tmp"' EXIT

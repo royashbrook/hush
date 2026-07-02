@@ -14,7 +14,16 @@ The commands are raw `gpg` + `base64`, so they work even if you have neither thi
 Every command below prompts ONCE for the passphrase , paste the key at the prompt. (`--pinentry-mode
 loopback` just forces the prompt onto the terminal; if your gpg pops its own dialog you can drop that flag.)
 
-The decrypted format is one line per secret: `name<TAB>base64-of-value`.
+The decrypted format is one line per secret: `name<TAB>base64-of-value`. The value column is
+**base64, not the raw secret** , that is the on-disk wire format, so binary / multiline / special-char
+secrets survive the tab layout intact. A raw `gpg -d` therefore shows base64, not readable values;
+you decode to get the real thing (section A does this for the whole file). To **spot-check one secret
+against your keychain** without decoding everything:
+
+```sh
+gpg --pinentry-mode loopback -d hush-backup-<date>.gpg \
+  | awk -F'\t' '$1=="<secret-name>"{print $2}' | base64 -d; echo
+```
 
 ---
 
