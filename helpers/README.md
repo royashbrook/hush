@@ -3,7 +3,7 @@
 Optional extras built ON TOP of the `hush` CLI. They are not part of core hush, not covered by its
 tests, and may be platform-specific. Use or ignore freely.
 
-## hush-backup , encrypted off-machine backup of the store (macOS + iCloud)
+## hush-backup, encrypted off-machine backup of the store (macOS + iCloud)
 
 A hush store lives only in the local OS keychain, so a wipe means re-provisioning every secret.
 `hush-backup` makes an encrypted copy you can keep off-machine.
@@ -40,7 +40,7 @@ default `hush-backup-key`), `HUSH_BACKUP_KEEP` (retention, default 30).
 
 ### schedule it (daily, macOS)
 
-See `com.hush-backup.plist` , customize the script path, copy to `~/Library/LaunchAgents/`, and load it
+See `com.hush-backup.plist`, customize the script path, copy to `~/Library/LaunchAgents/`, and load it
 (instructions in the plist header).
 
 ### restore / disaster recovery

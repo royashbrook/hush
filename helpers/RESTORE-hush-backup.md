@@ -1,21 +1,21 @@
-# hush-backup , recovery / restore runbook
+# hush-backup, recovery / restore runbook
 
 Self-contained. Keep a copy of this WITH the key (password manager / printed / next to the backups).
 The commands are raw `gpg` + `base64`, so they work even if you have neither this helper nor hush.
 
 ## What you need
 
-1. **a backup file** , `hush-backup-<date>.gpg` (iCloud Drive → `hush-backups/`, or wherever you airdropped one).
-2. **the key** , the value of `hush-backup-key` that you stowed in your password manager. The key IS the
+1. **a backup file**, `hush-backup-<date>.gpg` (iCloud Drive → `hush-backups/`, or wherever you airdropped one).
+2. **the key**, the value of `hush-backup-key` that you stowed in your password manager. The key IS the
    gpg passphrase. Without it these files are unrecoverable.
-3. **gpg installed** , macOS: `brew install gnupg`. linux: `apt install gnupg` (or distro equiv). `base64`
+3. **gpg installed**, macOS: `brew install gnupg`. linux: `apt install gnupg` (or distro equiv). `base64`
    is already on every unix/mac. You do NOT need hush to read the secrets, only to put them back in a keychain.
 
-Every command below prompts ONCE for the passphrase , paste the key at the prompt. (`--pinentry-mode
+Every command below prompts ONCE for the passphrase, paste the key at the prompt. (`--pinentry-mode
 loopback` just forces the prompt onto the terminal; if your gpg pops its own dialog you can drop that flag.)
 
 The decrypted format is one line per secret: `name<TAB>base64-of-value`. The value column is
-**base64, not the raw secret** , that is the on-disk wire format, so binary / multiline / special-char
+**base64, not the raw secret**, that is the on-disk wire format, so binary / multiline / special-char
 secrets survive the tab layout intact. A raw `gpg -d` therefore shows base64, not readable values;
 you decode to get the real thing (section A does this for the whole file). To **spot-check one secret
 against your keychain** without decoding everything:
@@ -84,7 +84,7 @@ done
 
 ## D. You DON'T have hush
 
-You don't need it to recover the secret VALUES , use **section A** to print every `name = value`, then put
+You don't need it to recover the secret VALUES, use **section A** to print every `name = value`, then put
 them wherever you need (set env vars, paste into the new service, etc). If you want hush itself back, it's at
 https://github.com/royashbrook/hush (build/install per its README), then use B or C.
 
@@ -95,6 +95,6 @@ https://github.com/royashbrook/hush (build/install per its README), then use B o
 - `hush-backup-key` is the ONE secret you must keep safe and SEPARATE. It is in the backup too, but a wipe
   takes the in-keychain copy, so your stowed copy is the master.
 - To drop the passphrase non-interactively (scripting only): add `--batch --passphrase 'THE-KEY'` to the gpg
-  command. That puts the key in your shell history , prefer the interactive prompt.
+  command. That puts the key in your shell history, prefer the interactive prompt.
 - The file is plain `gpg --symmetric` AES256. Any gpg on any OS decrypts it; nothing here is mac-specific
   except where noted.

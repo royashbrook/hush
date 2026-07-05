@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-<p align="center"><em>a secret store for AI agents , the one with no <code>get</code>.</em></p>
+<p align="center"><em>a secret store for AI agents, the one with no <code>get</code>.</em></p>
 
 <p align="center">
   <a href="https://github.com/royashbrook/hush/actions/workflows/ci.yml"><img src="https://github.com/royashbrook/hush/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/get-none-1f3a34?style=flat-square" alt="no get">
 </p>
 
-<p align="center"><strong>get a secret once into the OS keychain, then inject it into commands forever , the value never hits stdout, the transcript, or the cloud.</strong></p>
+<p align="center"><strong>get a secret once into the OS keychain, then inject it into commands forever, the value never hits stdout, the transcript, or the cloud.</strong></p>
 
 ---
 
@@ -25,14 +25,14 @@ secret only ever moves from the store straight into the consumer. There's no `ge
 plain getter is the leak.
 
 The point: you (an agent) are running as the user with their CLIs already authed, so you can already
-set a server-side secret or call a service , you just can't *see* the value without it landing in the
+set a server-side secret or call a service, you just can't *see* the value without it landing in the
 chat. hush gets it once into the OS keychain, then you inject it into those commands forever. No
 chat paste, no temp files, no `.env` to commit by accident.
 
 ## agents: start here
 
 **If you were handed this repo's url, install yourself, then follow the playbook.** Get the `hush`
-script onto the box and read [`SKILL.md`](SKILL.md) , that's the whole onboarding (it covers store /
+script onto the box and read [`SKILL.md`](SKILL.md), that's the whole onboarding (it covers store /
 mint / inject and how to adopt hush in the repo you're working in). The script is one self-contained
 bash file; put it wherever your agent loads tools or just on your `PATH`:
 
@@ -45,11 +45,11 @@ chmod +x hush/hush
 or run it straight from npm without cloning: `npx @royashbrook/hush <cmd>` (mac/linux; on windows use the
 clone, the orchestrator is bash).
 
-Claude Code convenience (auto-loads as a skill): clone straight into the skills dir instead , whole
+Claude Code convenience (auto-loads as a skill): clone straight into the skills dir instead, whole
 session `git clone https://github.com/royashbrook/hush ~/.claude/skills/hush`, or one project
 `./.claude/skills/hush`. Other agents: see [AGENTS.md](AGENTS.md).
 
-That's it , the human points you here and says "use the hush skill," and you take it from here. The
+That's it, the human points you here and says "use the hush skill," and you take it from here. The
 one thing only a human can do is paste a secret they hold: when you hit that, run `hush set <name>`
 and a hidden dialog pops on *their* screen (you never see the value).
 
@@ -81,6 +81,6 @@ moves the value internally (never re-asked, never printed). Full docs + the port
 
 An agent with shell access can read+write this store, so it's not a lock against a hostile process.
 It's structure that keeps plaintext out of the transcript and makes "store once, inject everywhere"
-the easy path. It's also only as durable as the machine it's on (a local keychain) , back the machine
+the easy path. It's also only as durable as the machine it's on (a local keychain), back the machine
 up, or sync onward into a real secret manager, and don't make hush the only copy of a secret you
 can't regenerate. MIT licensed.

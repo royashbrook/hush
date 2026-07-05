@@ -1,6 +1,6 @@
 ---
 name: hush
-description: Use whenever an agent needs to STORE, GENERATE, or USE a secret (API token, key, signing value, password) without ever exposing the plaintext. Replaces the "go set this env var / paste this token into that system" dance with one structured, OS-keychain-backed flow where the value goes straight from source into the consumer and never passes through the agent (no transcript, no logs, no cloud). Two add-paths: a value you GENERATED elsewhere (a vendor token, a PAT) gets pasted in once via a hidden prompt the agent can't see; a value that just needs to be STRONG+RANDOM (an operator key, a webhook signing secret) the agent generates and stores itself. Then it injects straight into the consumer (an env var, or a command's stdin), never printed , so an agent running as the user, with their CLIs already authed, can set server-side secrets and call services without the value ever touching the chat or disk. Triggers: "store this token", "save this key", "add it to the keychain", "generate an operator/signing key", "use the X secret to call Y", or any moment an agent needs a credential to reach a service. macOS, Linux, and Windows backends built in; the never-print contract is portable beyond them.
+description: Use whenever an agent needs to STORE, GENERATE, or USE a secret (API token, key, signing value, password) without ever exposing the plaintext. Replaces the "go set this env var / paste this token into that system" dance with one structured, OS-keychain-backed flow where the value goes straight from source into the consumer and never passes through the agent (no transcript, no logs, no cloud). Two add-paths: a value you GENERATED elsewhere (a vendor token, a PAT) gets pasted in once via a hidden prompt the agent can't see; a value that just needs to be STRONG+RANDOM (an operator key, a webhook signing secret) the agent generates and stores itself. Then it injects straight into the consumer (an env var, or a command's stdin), never printed, so an agent running as the user, with their CLIs already authed, can set server-side secrets and call services without the value ever touching the chat or disk. Triggers: "store this token", "save this key", "add it to the keychain", "generate an operator/signing key", "use the X secret to call Y", or any moment an agent needs a credential to reach a service. macOS, Linux, and Windows backends built in; the never-print contract is portable beyond them.
 version: 1.3.0
 ---
 
@@ -16,18 +16,18 @@ secret helpers don't have it.
 ## what this is actually for
 
 You're an agent running as the user, with their CLIs already authed (`gh`, `az`, `wrangler`, ...). So
-you can *already* set a server-side secret or call a service , the one thing you can't do is **see the
+you can *already* set a server-side secret or call a service, the one thing you can't do is **see the
 value**. Every usual way to get it is bad: have the user paste it into the chat (now it's in the
-transcript), drop it in a temp file, or send them off to set it by hand , each one is a context-switch
+transcript), drop it in a temp file, or send them off to set it by hand, each one is a context-switch
 and a leak risk, and half the time the value is never written down, so next time you have to rotate
 the whole secret.
 
-hush is the single fix. **Get the value once** , the user pastes into a hidden dialog you pop, or you
-mint a random one yourself , it lands in the **OS keychain**, and from then on you inject it into
+hush is the single fix. **Get the value once**, the user pastes into a hidden dialog you pop, or you
+mint a random one yourself, it lands in the **OS keychain**, and from then on you inject it into
 those already-authed commands **forever**, no more pasting, no more waiting on the user. When they
 need it back or want to move it elsewhere, it's sitting in their keychain.
 
-It also beats a `.env` file: nothing lives in the repo, so nothing gets committed by accident , you
+It also beats a `.env` file: nothing lives in the repo, so nothing gets committed by accident, you
 set secrets server-side straight from the keychain.
 
 ## the tool
@@ -44,24 +44,24 @@ Store backends are auto-detected:
 
 ### naming convention: one namespace, project-prefixed names
 
-**Keep the default `hush` namespace and prefix each secret's NAME by project** , `blame-cf-token`,
+**Keep the default `hush` namespace and prefix each secret's NAME by project**, `blame-cf-token`,
 `lifescored-gemini-key`. Two reasons. First, findability: a human searches the keychain for `hush`
 once and sees *every* hush secret across *every* project. Second, disambiguation: you'll hold several
 of the same *kind* of secret (a `gemini` key for three different projects), so a bare `gemini-key` is
-ambiguous , `lifescored-gemini-key` isn't. The rest of the name is free-form; the **project prefix**
-is the part that matters. (The namespace prefixes the stored item , the macOS keychain item is
-`hush:<name>` , and `list` reads names straight from the store, so there's no separate index to drift.)
+ambiguous, `lifescored-gemini-key` isn't. The rest of the name is free-form; the **project prefix**
+is the part that matters. (The namespace prefixes the stored item, the macOS keychain item is
+`hush:<name>`, and `list` reads names straight from the store, so there's no separate index to drift.)
 
 **Do NOT use a per-project `HUSH_NS`.** It's tempting (`HUSH_NS=blame`), but it breaks the
-one-search findability above , each project's secrets hide in their own namespace. `HUSH_NS` exists
+one-search findability above, each project's secrets hide in their own namespace. `HUSH_NS` exists
 only for a genuinely *separate* store: a different agent, or an isolated environment you deliberately
 want kept out of your normal `hush` search. That's rare. Per-project separation is the name prefix's
 job, not the namespace's.
 
-**To fix or re-home a name, use `hush rename <old> <new>` (alias `mv`) , it needs no human.** It
+**To fix or re-home a name, use `hush rename <old> <new>` (alias `mv`), it needs no human.** It
 moves the value inside the store (fetch → store-new → delete-old), never prints it, and never
 re-asks. So adding a missing prefix is one command: `hush rename gemini-api-key lifescored-gemini-key`.
-**NEVER `rm` a secret and re-ask the human to paste a value that's already in the store** , that's the
+**NEVER `rm` a secret and re-ask the human to paste a value that's already in the store**, that's the
 exact pointless dance hush exists to kill. If it's already stored, move it; don't beg for it again.
 
 ## getting a secret INTO the store (the two add-paths)
@@ -73,13 +73,13 @@ Pick by where the value comes from:
    hush set <name>
    ```
    and a hidden paste dialog pops on the **user's screen** (macOS dialog, Linux zenity/kdialog,
-   Windows masked box). The user pastes into it , they never leave the conversation , and the command
+   Windows masked box). The user pastes into it, they never leave the conversation, and the command
    blocks until they do; then the agent continues. The agent never sees the value. **This is the
    collaborative path: the agent drives it, the user just answers the popup.** Don't tell the user to
-   "go run a command and let you know" , run `hush set <name>` yourself and wait for the dialog.
+   "go run a command and let you know", run `hush set <name>` yourself and wait for the dialog.
    - **re-ask** (user pasted the wrong thing, "ask me again for the second token"): the agent just
      runs `hush set <name>` again , it overwrites in place. Same for rotating any secret later.
-   - **scripted/CI**: pipe it instead , `printf '%s' "$VAL" | hush set <name>` (still off argv).
+   - **scripted/CI**: pipe it instead, `printf '%s' "$VAL" | hush set <name>` (still off argv).
    - the user running `hush set` in their *own* terminal is only a far fallback (they can already do
      that); the whole point is the agent-driven popup so nobody leaves the chat.
 
@@ -118,9 +118,9 @@ server-side secret (`hush pipe gh-pat -- gh secret set X`, `hush pipe key -- npx
 X`); **run** a command with the value in its environment to call a service (`hush run TOKEN=t --
 curl ...`). The value lives only in that child process , never on disk, never printed.
 
-> **Escape hatch , `hush file <name> <path>`.** A few tools can *only* read a credential from a file
+> **Escape hatch, `hush file <name> <path>`.** A few tools can *only* read a credential from a file
 > path (a service-account JSON, a cert, a kubeconfig). For those, and only those, `hush file` writes a
-> 0600 file (and refuses inside a git repo). Don't reach for it as a convenience , writing a secret to
+> 0600 file (and refuses inside a git repo). Don't reach for it as a convenience, writing a secret to
 > disk is the exact dance hush exists to kill. Inject via `run`/`pipe` whenever the tool allows it.
 
 ## if a human needs to read a value
@@ -170,48 +170,48 @@ to "one command injects everything":
    - **only the user has it** (a portal/dashboard key, nothing local): the AGENT runs `hush set foo`,
      which pops the paste dialog for the user , do NOT tell them to run a command and report back.
      they paste into the popup and you continue.
-3. **pick how the secrets reach the consumer , two shapes, by how the app reads them:**
+3. **pick how the secrets reach the consumer, two shapes, by how the app reads them:**
 
    **(a) the run command reads them from the environment** (a node / vite / python dev-or-deploy that
    uses `process.env.X`). write a `.hush` manifest in the repo root mapping each env var to its hush
-   secret name (names aren't secret, so it commits) , use **project-prefixed names**, default
+   secret name (names aren't secret, so it commits), use **project-prefixed names**, default
    namespace:
    ```
    DATABASE_URL=lifescored-db-url
    GEMINI_API_KEY=lifescored-gemini-key
    ```
-   then **switch the dev/deploy command to** `hush exec -- <cmd>` , it reads `.hush`, injects every
+   then **switch the dev/deploy command to** `hush exec -- <cmd>`, it reads `.hush`, injects every
    mapped secret, and runs the command. a fresh agent just runs that, no rediscovery.
    (`hush exec --file <path>` if the manifest isn't at the repo root. a manifest *can* set a separate
-   store with an `ns=<namespace>` first line, but that's the rare separate-store case , per the naming
+   store with an `ns=<namespace>` first line, but that's the rare separate-store case, per the naming
    convention above, default to the `hush` namespace + prefixed names, not a per-project `ns`.)
 
-   **(b) nothing in the run path reads the environment** , e.g. a Cloudflare Worker (secrets are
+   **(b) nothing in the run path reads the environment**, e.g. a Cloudflare Worker (secrets are
    *bindings* via `platform.env`, populated from the dashboard / `.dev.vars`, not the process
    environment), or a repo that only deploys from CI. there's no run command to wrap, so skip the
-   manifest , `hush exec` would just inject into a process that never looks. the adoption here is
+   manifest, `hush exec` would just inject into a process that never looks. the adoption here is
    **store once, then pipe straight into the write-only destination:**
    ```
    hush pipe gemini-key   -- npx wrangler secret put GEMINI_API_KEY   # into the Worker
    hush pipe deploy-token -- gh secret set CLOUDFLARE_API_TOKEN       # into GitHub Actions
    ```
-   this is a first-class outcome, not a lesser one , see *why store it at all* below.
+   this is a first-class outcome, not a lesser one, see *why store it at all* below.
 
 4. **stop committing the plaintext** (gitignore or delete the `.env` / `.dev.vars`) now that hush
    holds it.
 
 Work through this and **report the result, don't narrate each command.** End on one of two things:
-"it's wired, here's what changed," or "i need one value only you have , paste it" and drive the
+"it's wired, here's what changed," or "i need one value only you have, paste it" and drive the
 `hush set` dialog yourself. Don't hand the human a list of commands to go run.
 
 ## why store it at all (if it's already in Cloudflare / GitHub)
 
 Because those are **write-only.** Once a value is a Worker secret or a GitHub Actions secret, you
-can't read it back , so if the original wasn't kept, your only move next time is to rotate the whole
+can't read it back, so if the original wasn't kept, your only move next time is to rotate the whole
 secret. The usual stopgaps are worse: pasting it into Notes/TextEdit "just for a sec," or letting an
 agent drop it in a `/tmp` file to read-and-push, then forgetting it exists.
 
-hush is the **owner-readable backstop** , a consistent *first* home, not the final one. The pattern:
+hush is the **owner-readable backstop**, a consistent *first* home, not the final one. The pattern:
 the agent mints or receives the value, stores it in hush, AND pipes it into the write-only
 destination, so the value is never lost or force-rotated just because nobody wrote it down. When
 *you* need it later you read it from your own keychain (see *if a human needs to read a value*), not
@@ -220,7 +220,7 @@ a sticky note.
 Treat it as an **on-ramp.** Two wins land immediately, even with no `hush exec` in sight: you can
 generate secrets securely from day one, and on an old project with values scattered across `.env`s,
 dashboards, and your head, a few pastes get them (a) centralized and (b) agent-usable from then on.
-For a durable, shareable home, **sync them onward** into a real secret manager , see *extending
+For a durable, shareable home, **sync them onward** into a real secret manager, see *extending
 hush* for wiring a 1Password / vault / pass backend. hush gets you consistent; the sync makes it
 permanent.
 
@@ -245,7 +245,7 @@ back, it should just do it. Two directions:
    with a CLI (1Password `op`, `pass`, HashiCorp `vault`, Doppler, Bitwarden `bw`), an agent can
    offer to add a backend so hush reads/writes through that instead of the OS keychain. hush doesn't
    ship every adapter, but the backend is a small, swappable layer (`b_store` / `b_fetch` /
-   `b_exists` / `b_delete` / `b_list` in the script) , an agent can wire a new one locally (a local,
+   `b_exists` / `b_delete` / `b_list` in the script), an agent can wire a new one locally (a local,
    user-owned edit, that's fine). **Any added backend keeps the same contract**: never print the
    value, inject-only, no getter. The base just has to exist so the agent stops asking the human to
    shuttle secrets by hand.
@@ -281,6 +281,6 @@ That's it, and that's enough to remove a real, constant friction.
 
 It's also **only as durable as the machine it lives on.** The store is a local keychain, so a machine
 backup (Time Machine and the like) covers it, but if the disk dies and nothing's backed up, it's
-gone. So back the machine up, or sync onward into a real secret manager (see *extending hush*) , and
+gone. So back the machine up, or sync onward into a real secret manager (see *extending hush*), and
 don't treat hush as the *only* copy of a secret you can't regenerate. (No runtime nagging about this;
 it's just the honest expectation to set.)
