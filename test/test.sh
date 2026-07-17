@@ -82,5 +82,44 @@ trace="$(env SHELLOPTS=xtrace "$HUSH" run V=t-set -- true 2>&1 1>/dev/null)"
 printf '%s' "$trace" | grep -qF "$SENTINEL" && bad "LEAK: xtrace dumped the value" || ok "xtrace guard holds"
 "$HUSH" rm t-set >/dev/null 2>&1
 
+# 10. prompt-method regression (the agent-host GUI-prompt fixes).
+# 10a. HUSH_PROMPT=pipe with an EMPTY stdin must ERROR, never silently store empty.
+printf '' | env HUSH_PROMPT=pipe "$HUSH" set t-empty >/dev/null 2>&1 && bad "empty forced-pipe stored (should error)" || ok "empty forced-pipe errors"
+"$HUSH" list 2>&1 | grep -qx "t-empty" && bad "forced-pipe stored empty" || ok "forced-pipe stored nothing"
+# 10b. bad HUSH_PROMPT is rejected.
+env HUSH_PROMPT=bogus "$HUSH" set t-x >/dev/null 2>&1 && bad "bad HUSH_PROMPT accepted" || ok "bad HUSH_PROMPT rejected"
+
+# On mac the GUI branch is always reachable (osascript exists), so a bare fall-through would hit the
+# REAL dialog and block/vary by session. Stub osascript on PATH to simulate a no-GUI session (the
+# reported XPC failure) so the fall-through + honest-error paths are deterministic. Non-mac CI has no
+# GUI dialog backend, so the fall-through naturally lands on the final die.
+STUB=""
+if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
+  STUB="$(mktemp -d 2>/dev/null || echo "${TMPDIR:-/tmp}/hush-stub-$$")"; mkdir -p "$STUB"
+  printf '#!/bin/sh\necho "execution error: Connection Invalid error for service com.apple.hiservices-xpcservice. (-1)" >&2\nexit 1\n' > "$STUB/osascript"
+  chmod +x "$STUB/osascript"
+fi
+run_prompt() { # run hush set with the stub PATH (mac) or bare (else), HUSH_PROMPT cleared
+  if [ -n "$STUB" ]; then env -u HUSH_PROMPT PATH="$STUB:$PATH" "$HUSH" "$@"; else env -u HUSH_PROMPT "$HUSH" "$@"; fi
+}
+# 10c. an EMPTY real pipe must FALL THROUGH (not be stored as empty). With the GUI failing/absent it
+# ends in an honest nonzero error and stores nothing, proving empty-pipe != empty-value.
+out="$(printf '' | run_prompt set t-empty 2>&1)"; rc=$?
+[ "$rc" -ne 0 ] && ok "empty pipe falls through (nonzero exit)" || bad "empty pipe stored (exit 0)"
+"$HUSH" list 2>&1 | grep -qx "t-empty" && bad "empty pipe stored a value" || ok "empty pipe stored nothing"
+# 10d. mac only: the fall-through reached the dialog, and its FAILURE is reported honestly, NEVER
+# masked as "cancelled or empty". Also check the forced --gui path surfaces the same way.
+if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
+  printf '%s' "$out" | grep -qi "could not open" && ok "dialog failure reported honestly" || bad "dialog failure not surfaced (got: $out)"
+  printf '%s' "$out" | grep -qi "cancelled or empty" && bad "backend failure masked as cancelled/empty" || ok "backend failure NOT masked as cancelled"
+  out2="$(run_prompt set t-x --gui < /dev/null 2>&1)"
+  printf '%s' "$out2" | grep -qi "could not open" && ok "--gui failure honest" || bad "--gui failure not surfaced (got: $out2)"
+  "$HUSH" list 2>&1 | grep -qx "t-x" && bad "stored despite dialog failure" || ok "nothing stored on dialog failure"
+  rm -rf "$STUB" 2>/dev/null
+else
+  ok "osascript-failure checks (mac-only, skipped on $(uname -s 2>/dev/null))"
+fi
+"$HUSH" rm t-empty >/dev/null 2>&1; "$HUSH" rm t-x >/dev/null 2>&1
+
 echo "# done. failures: $fails"
 [ "$fails" -eq 0 ]

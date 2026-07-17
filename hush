@@ -109,39 +109,78 @@ b_list() {
 
 # Collect a value WITHOUT echoing it. The agent-collaborative path: the AGENT runs `hush set <name>`,
 # this pops a GUI paste dialog on the USER's screen, the user pastes there (never leaving the chat),
-# and the command blocks until they do. Order: a real pipe (scripts/CI) -> GUI dialog (mac/linux/
-# windows) -> a tty prompt -> give up. The pipe check is `-p` (a real fifo), NOT just "not a tty",
-# so an agent whose stdin is /dev/null still gets the dialog instead of reading empty input.
+# and the command blocks until they do. Order (auto): a real pipe WITH A VALUE (scripts/CI) -> GUI
+# dialog (mac/linux/windows) -> a tty prompt -> give up. Override the method with HUSH_PROMPT or
+# `hush set --gui|--tty|--pipe` (values: auto|pipe|gui|tty).
+#
+# Two agent-host realities this handles (both real, seen from a codex-run shell):
+#  1. an agent runner wires stdin to an IDLE pipe. In `auto`, an empty pipe is NOT a value (empty is
+#     never storable anyway), so it FALLS THROUGH to the GUI/tty instead of dead-ending on empty.
+#  2. a detached/background session can't reach the window server, so the mac dialog fails. That
+#     failure is reported HONESTLY (with the osascript error + a fallback), never masked as
+#     "cancelled or empty". The never-print contract holds: on failure no value was entered, and
+#     osascript's stderr carries the error text, never the secret.
 prompt_value() {
   local name="$1" __out="$2" __v="" msg="paste the value for secret: $name"
-  if [ -p /dev/stdin ]; then
-    __v="$(cat)"                                                   # piped: printf '%s' "$val" | hush set <name>
-  elif [ "$BACKEND" = mac ] && command -v osascript >/dev/null 2>&1; then
-    __v="$(osascript -e "try
-  text returned of (display dialog \"$msg\" default answer \"\" with hidden answer with title \"hush set\")
-end try" 2>/dev/null)" || true
-  elif command -v zenity >/dev/null 2>&1; then
-    __v="$(zenity --entry --hide-text --title="hush set" --text="$msg" 2>/dev/null)" || true
-  elif command -v kdialog >/dev/null 2>&1; then
-    __v="$(kdialog --password "$msg" 2>/dev/null)" || true
-  elif [ "$BACKEND" = windows ] && command -v powershell.exe >/dev/null 2>&1; then
-    __v="$(winps prompt "$name" 2>/dev/null)" || true
-  elif [ -t 0 ]; then
-    printf 'paste value for "%s" (input hidden): ' "$name" >&2
-    read -rs __v < /dev/tty || true
-    printf '\n' >&2
-  else
-    die "set: no pipe, GUI, or terminal to collect the value. pipe it (printf '%s' \"\$V\" | hush set $name) or run where a dialog/tty is available."
+  local mode="${HUSH_PROMPT:-auto}"
+  case "$mode" in auto|pipe|gui|tty) ;; *) die "HUSH_PROMPT must be auto|pipe|gui|tty (got '$mode')." ;; esac
+
+  # PIPE. forced pipe: whatever comes (even empty, which set/ will reject). auto: only a NON-EMPTY
+  # pipe counts as the value; an empty pipe falls through (agent hosts wire an idle stdin pipe).
+  if [ "$mode" = pipe ] || { [ "$mode" = auto ] && [ -p /dev/stdin ]; }; then
+    __v="$(cat)"
+    if [ -n "$__v" ] || [ "$mode" = pipe ]; then printf -v "$__out" '%s' "$__v"; return 0; fi
   fi
-  printf -v "$__out" '%s' "$__v"
+
+  # GUI dialog.
+  if [ "$mode" = gui ] || [ "$mode" = auto ]; then
+    if [ "$BACKEND" = mac ] && command -v osascript >/dev/null 2>&1; then
+      local __err __rc; __err="$(mktemp 2>/dev/null || printf '%s' "${TMPDIR:-/tmp}/hush-osa-$$")"
+      __v="$(osascript -e "text returned of (display dialog \"$msg\" default answer \"\" with hidden answer with title \"hush set\")" 2>"$__err")"; __rc=$?
+      if [ "$__rc" -eq 0 ]; then rm -f "$__err"; printf -v "$__out" '%s' "$__v"; return 0; fi
+      if grep -qiE 'user canceled|-128' "$__err" 2>/dev/null; then rm -f "$__err"; die "prompt cancelled; nothing stored."; fi
+      local __sess __detail; __sess="$(launchctl managername 2>/dev/null || echo unknown)"
+      __detail="$(tr '\n' ' ' < "$__err" 2>/dev/null | sed 's/  */ /g;s/ *$//')"; rm -f "$__err"
+      die "macOS paste dialog could not open (session: ${__sess}; osascript: ${__detail:-unknown error}). this shell can't reach the window server, common in an agent / ssh / background context. fallbacks: pipe the value ( printf '%s' \"\$VAL\" | hush set $name ), or run 'hush set $name' from a GUI-attached Terminal."
+    elif command -v zenity >/dev/null 2>&1; then
+      __v="$(zenity --entry --hide-text --title="hush set" --text="$msg" 2>/dev/null)" || die "zenity dialog failed or was cancelled; nothing stored."
+      printf -v "$__out" '%s' "$__v"; return 0
+    elif command -v kdialog >/dev/null 2>&1; then
+      __v="$(kdialog --password "$msg" 2>/dev/null)" || die "kdialog was cancelled; nothing stored."
+      printf -v "$__out" '%s' "$__v"; return 0
+    elif [ "$BACKEND" = windows ] && command -v powershell.exe >/dev/null 2>&1; then
+      __v="$(winps prompt "$name" 2>/dev/null)" || die "windows prompt failed or was cancelled; nothing stored."
+      printf -v "$__out" '%s' "$__v"; return 0
+    elif [ "$mode" = gui ]; then
+      die "forced GUI prompt (HUSH_PROMPT=gui / --gui), but no GUI dialog backend is available here."
+    fi
+  fi
+
+  # TTY.
+  if [ "$mode" = tty ] || [ "$mode" = auto ]; then
+    if [ -t 0 ]; then
+      printf 'paste value for "%s" (input hidden): ' "$name" >&2
+      read -rs __v < /dev/tty || true
+      printf '\n' >&2
+      printf -v "$__out" '%s' "$__v"; return 0
+    elif [ "$mode" = tty ]; then
+      die "forced tty prompt (HUSH_PROMPT=tty), but stdin is not a terminal."
+    fi
+  fi
+
+  die "set: no pipe value, GUI dialog, or terminal available to collect the value. pipe it ( printf '%s' \"\$V\" | hush set $name ), or run where a dialog/tty is available."
 }
 
 usage() {
   cat >&2 <<'EOF'
 hush — a secret store for AI agents. values are never printed.
 
-  hush set  <name>                 store a value you ALREADY hold. interactive hidden prompt, or
+  hush set  <name> [--gui|--tty|--pipe]
+                                   store a value you ALREADY hold. interactive hidden prompt, or
                                    pipe it: printf '%s' "$VAL" | hush set <name>. re-run to rotate.
+                                   method auto-selects (pipe-with-value -> GUI -> tty); force it with
+                                   a flag or HUSH_PROMPT=gui|tty|pipe. an empty pipe falls through to
+                                   the dialog (for agent shells that wire an idle stdin pipe).
   hush mint <name> [--bytes N] [--force]   (alias: gen)
                                    generate a strong random value (default 32 bytes hex), store it
   hush run  ENVVAR=secret-name [E2=name2 ...] -- <cmd...>
@@ -170,7 +209,18 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   set)
     backend_check
-    name="${1:-}"; [ -n "$name" ] || usage
+    name=""
+    for a in "$@"; do
+      case "$a" in
+        --gui)  HUSH_PROMPT=gui ;;
+        --tty)  HUSH_PROMPT=tty ;;
+        --pipe) HUSH_PROMPT=pipe ;;
+        --)     ;;
+        -*)     die "set: unknown flag '$a' (use --gui / --tty / --pipe)." ;;
+        *)      if [ -z "$name" ]; then name="$a"; else die "set: unexpected extra argument '$a'."; fi ;;
+      esac
+    done
+    [ -n "$name" ] || usage
     prompt_value "$name" value
     [ -n "${value:-}" ] || die "no value entered (cancelled or empty); nothing stored."
     b_store "$name" "$value"; unset value

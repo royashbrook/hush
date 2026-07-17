@@ -66,10 +66,16 @@ Cross-OS tested in CI (manual `workflow_dispatch`, all three runners).
 ```sh
 hush set my-vendor-token                      # paste a value you hold (hidden prompt)
 printf '%s' "$TOK" | hush set my-vendor-token # ...or pipe it in (scripts/CI), still off argv
+hush set my-vendor-token --gui                # force the dialog (or --tty / --pipe; HUSH_PROMPT= too)
 hush mint app-operator-key                    # generate + store a random one
 hush run TOKEN=my-vendor-token -- some-cmd    # inject into a command, never printed
 hush list                                     # names only, never values
 ```
+
+**On an agent host where the dialog won't open** (some runners have no GUI session, so macOS can't
+post the paste dialog, `Connection Invalid ... hiservices-xpcservice`): hush now says so plainly
+instead of a misleading "cancelled or empty", and the fix is to **pipe the value**
+(`printf '%s' "$VAL" | hush set <name>`) or run `hush set <name>` from a GUI-attached Terminal.
 
 Naming: keep the default `hush` namespace and **prefix names by project** (`blame-cf-token`,
 `lifescored-gemini-key`) so one keychain search for `hush` finds everything. `HUSH_NS` is only for a

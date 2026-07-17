@@ -1,7 +1,7 @@
 ---
 name: hush
 description: Use whenever an agent needs to STORE, GENERATE, or USE a secret (API token, key, signing value, password) without ever exposing the plaintext. Replaces the "go set this env var / paste this token into that system" dance with one structured, OS-keychain-backed flow where the value goes straight from source into the consumer and never passes through the agent (no transcript, no logs, no cloud). Two add-paths: a value you GENERATED elsewhere (a vendor token, a PAT) gets pasted in once via a hidden prompt the agent can't see; a value that just needs to be STRONG+RANDOM (an operator key, a webhook signing secret) the agent generates and stores itself. Then it injects straight into the consumer (an env var, or a command's stdin), never printed, so an agent running as the user, with their CLIs already authed, can set server-side secrets and call services without the value ever touching the chat or disk. Triggers: "store this token", "save this key", "add it to the keychain", "generate an operator/signing key", "use the X secret to call Y", or any moment an agent needs a credential to reach a service. macOS, Linux, and Windows backends built in; the never-print contract is portable beyond them.
-version: 1.3.0
+version: 1.3.1
 ---
 
 # hush
@@ -80,6 +80,10 @@ Pick by where the value comes from:
    - **re-ask** (user pasted the wrong thing, "ask me again for the second token"): the agent just
      runs `hush set <name>` again , it overwrites in place. Same for rotating any secret later.
    - **scripted/CI**: pipe it instead, `printf '%s' "$VAL" | hush set <name>` (still off argv).
+   - **dialog won't open on your host**: some agent runners have no GUI session, so macOS can't post
+     the dialog (`Connection Invalid ... hiservices-xpcservice`). hush reports that plainly now (not
+     "cancelled or empty"). Fall back to piping the value, or have the user run `hush set <name>` from
+     a GUI-attached Terminal. Force a specific method with `--gui|--tty|--pipe` or `HUSH_PROMPT=`.
    - the user running `hush set` in their *own* terminal is only a far fallback (they can already do
      that); the whole point is the agent-driven popup so nobody leaves the chat.
 
