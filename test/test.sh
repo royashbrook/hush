@@ -145,5 +145,17 @@ else
   bad "isolated KeePass schedule suite"
 fi
 
+if bash "$(dirname "${BASH_SOURCE[0]:-$0}")/bitwarden-sync.sh"; then
+  ok "isolated Bitwarden sync suite"
+else
+  bad "isolated Bitwarden sync suite"
+fi
+
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/bitwarden-schedule.mjs"; then
+  ok "isolated Bitwarden schedule suite"
+else
+  bad "isolated Bitwarden schedule suite"
+fi
+
 echo "# done. failures: $fails"
 [ "$fails" -eq 0 ]

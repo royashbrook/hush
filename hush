@@ -204,6 +204,11 @@ hush — a secret store for AI agents. values are never printed.
                                    upsert selected secrets into a KeePassXC database. with no names,
                                    sync all except the database-password secret. options: --init,
                                    --group <name> (default: hush), --exclude <name>, --dry-run
+  hush sync bitwarden [options] [name ...]
+                                   upsert selected secrets into Bitwarden login-password fields.
+                                   requires an unlocked BW_SESSION. with no names, sync all except
+                                   auth secrets. options: --folder <name> (default: hush),
+                                   --exclude <name> (repeatable), --dry-run
   hush file <name> <path>          write the value to a 0600 file (refuses inside a git repo)
   hush list                        list NAMES only, read straight from the store (never values)
   hush rename <old> <new> [--force]   (alias: mv)
@@ -318,8 +323,8 @@ case "$cmd" in
     ;;
   sync)
     backend_check
-    target="${1:-}"; [ -n "$target" ] || die "sync: missing target (supported: lastpass, keepass)"; shift
-    case "$target" in lastpass|keepass) ;; *) die "sync: unsupported target '$target' (supported: lastpass, keepass)" ;; esac
+    target="${1:-}"; [ -n "$target" ] || die "sync: missing target (supported: lastpass, keepass, bitwarden)"; shift
+    case "$target" in lastpass|keepass|bitwarden) ;; *) die "sync: unsupported target '$target' (supported: lastpass, keepass, bitwarden)" ;; esac
 
     if [ "$target" = lastpass ]; then
     group="hush"; dry_run=0; names=(); excludes=()
@@ -398,7 +403,7 @@ case "$cmd" in
       unset __val
       printf 'hush: synced %s -> LastPass %s (value not shown).\n' "$name" "$entry"
     done
-    else
+    elif [ "$target" = keepass ]; then
       database=""; db_secret=""; group="hush"; init=0; dry_run=0; names=(); excludes=()
       while [ $# -gt 0 ]; do
         case "$1" in
@@ -537,6 +542,133 @@ case "$cmd" in
         printf 'hush: created KeePass database %s. keep its password somewhere recoverable.\n' "$database"
       fi
       unset __db
+    else
+      folder="hush"; dry_run=0; names=(); excludes=()
+      auth_names=(bitwarden-client-id bitwarden-client-secret bitwarden-master-password)
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --folder)
+            [ $# -ge 2 ] || die "sync bitwarden: --folder needs a name"
+            folder="$2"; shift 2 ;;
+          --exclude)
+            [ $# -ge 2 ] || die "sync bitwarden: --exclude needs a secret name"
+            excludes+=("$2"); shift 2 ;;
+          --dry-run) dry_run=1; shift ;;
+          --) shift; while [ $# -gt 0 ]; do names+=("$1"); shift; done ;;
+          -*) die "sync bitwarden: unknown option '$1'" ;;
+          *) names+=("$1"); shift ;;
+        esac
+      done
+
+      [ -n "$folder" ] || die "sync bitwarden: --folder cannot be empty"
+      case "$folder" in *$'\n'*) die "sync bitwarden: --folder cannot contain a newline" ;; esac
+      if [ "${#excludes[@]}" -gt 0 ]; then
+        for excluded in "${excludes[@]}"; do
+          [ -n "$excluded" ] || die "sync bitwarden: --exclude cannot be empty"
+          case "$excluded" in *$'\n'*) die "sync bitwarden: --exclude cannot contain a newline" ;; esac
+        done
+      fi
+
+      bw="${HUSH_BITWARDEN:-bw}"
+      node="${HUSH_NODE:-node}"
+      hush_source="$("$node" -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' "${BASH_SOURCE[0]:-$0}")" ||
+        die "sync bitwarden: could not resolve the hush install path"
+      hush_dir="$(dirname "$hush_source")"
+      bw_json="${HUSH_BITWARDEN_JSON:-$hush_dir/helpers/hush-bitwarden-json.mjs}"
+      command -v "$bw" >/dev/null 2>&1 || die "sync bitwarden: '$bw' is required (install bitwarden-cli)"
+      command -v "$node" >/dev/null 2>&1 || die "sync bitwarden: '$node' is required"
+      [ -f "$bw_json" ] || die "sync bitwarden: JSON helper not found at '$bw_json'"
+      "$bw" status 2>/dev/null | "$node" "$bw_json" status >/dev/null 2>&1 ||
+        die "sync bitwarden: vault is not unlocked (set BW_SESSION or use hush-bitwarden-schedule)"
+      "$bw" sync >/dev/null 2>&1 || die "sync bitwarden: server sync failed before write"
+
+      if [ "${#names[@]}" -eq 0 ]; then
+        while IFS= read -r name; do [ -n "$name" ] && names+=("$name"); done < <(b_list)
+      fi
+      [ "${#names[@]}" -gt 0 ] || die "sync bitwarden: no hush secrets found in namespace '$NS'"
+
+      selected=()
+      for name in "${names[@]}"; do
+        skip=0
+        for auth_name in "${auth_names[@]}"; do [ "$name" = "$auth_name" ] && skip=1; done
+        if [ "${#excludes[@]}" -gt 0 ]; then
+          for excluded in "${excludes[@]}"; do [ "$name" = "$excluded" ] && skip=1; done
+        fi
+        [ "$skip" -eq 1 ] || selected+=("$name")
+      done
+      if [ "${#selected[@]}" -eq 0 ]; then
+        printf 'hush: no Bitwarden sync candidates remain after exclusions.\n'
+        exit 0
+      fi
+      names=("${selected[@]}")
+
+      for name in "${names[@]}"; do
+        [ -n "$name" ] || die "sync bitwarden: secret names cannot be empty"
+        case "$name" in *$'\n'*) die "sync bitwarden: secret names cannot contain a newline ('$name')" ;; esac
+        b_exists "$name" || die "sync bitwarden: no secret named '$name' (try: hush list)"
+      done
+
+      folder_id=""
+      folder_rc=0
+      folder_id="$("$bw" list folders 2>/dev/null | "$node" "$bw_json" folder "$folder")" || folder_rc=$?
+      [ "$folder_rc" -ne 3 ] || die "sync bitwarden: duplicate folder '$folder'"
+      [ "$folder_rc" -eq 0 ] || die "sync bitwarden: could not inspect folders"
+
+      actions=(); ids=()
+      if [ -z "$folder_id" ]; then
+        for name in "${names[@]}"; do actions+=(create); ids+=(""); done
+      else
+        for name in "${names[@]}"; do
+          item_id=""; item_rc=0
+          item_id="$("$bw" list items --search "$name" 2>/dev/null | "$node" "$bw_json" item "$name" "$folder_id")" || item_rc=$?
+          [ "$item_rc" -ne 3 ] || die "sync bitwarden: duplicate item '$folder/$name'"
+          [ "$item_rc" -eq 0 ] || die "sync bitwarden: could not inspect '$folder/$name'"
+          if [ -n "$item_id" ]; then actions+=(edit); else actions+=(create); fi
+          ids+=("$item_id")
+        done
+      fi
+
+      if [ "$dry_run" -eq 1 ]; then
+        [ -n "$folder_id" ] || printf 'hush: would create Bitwarden folder %s.\n' "$folder"
+        i=0
+        for name in "${names[@]}"; do
+          printf 'hush: would %s %s -> Bitwarden %s/%s (value not read).\n' "${actions[$i]}" "$name" "$folder" "$name"
+          i=$((i + 1))
+        done
+        exit 0
+      fi
+
+      if [ -z "$folder_id" ]; then
+        folder_id="$("$bw" get template folder 2>/dev/null |
+          "$node" "$bw_json" folder-create "$folder" |
+          "$bw" create folder 2>/dev/null |
+          "$node" "$bw_json" id)" ||
+          die "sync bitwarden: could not create folder '$folder'"
+      fi
+
+      i=0
+      for name in "${names[@]}"; do
+        __val=""
+        b_fetch "$name" __val
+        if [ "${actions[$i]}" = create ]; then
+          if ! "$bw" get template item 2>/dev/null |
+            HUSH_BITWARDEN_VALUE="$__val" "$node" "$bw_json" item-create "$name" "$folder_id" |
+            "$bw" create item >/dev/null 2>&1; then
+            unset __val
+            die "sync bitwarden: Bitwarden rejected create '$folder/$name'; no value was shown"
+          fi
+        else
+          if ! "$bw" get item "${ids[$i]}" 2>/dev/null |
+            HUSH_BITWARDEN_VALUE="$__val" "$node" "$bw_json" item-update "$name" "$folder_id" |
+            "$bw" edit item "${ids[$i]}" >/dev/null 2>&1; then
+            unset __val
+            die "sync bitwarden: Bitwarden rejected update '$folder/$name'; no value was shown"
+          fi
+        fi
+        unset __val
+        printf 'hush: synced %s -> Bitwarden %s/%s (value not shown).\n' "$name" "$folder" "$name"
+        i=$((i + 1))
+      done
     fi
     ;;
   file)
