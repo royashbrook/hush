@@ -72,6 +72,7 @@ hush run TOKEN=my-vendor-token -- some-cmd    # inject into a command, never pri
 hush sync lastpass --dry-run                  # preview a one-way LastPass sync
 hush sync lastpass                            # upsert every name under LastPass group "hush"
 hush sync keepass --database vault.kdbx --db-secret keepass-password --dry-run
+hush sync bitwarden --dry-run                 # requires an unlocked BW_SESSION
 hush list                                     # names only, never values
 ```
 
@@ -188,6 +189,52 @@ the database and mode-0600 metadata config.
 Keep one durable copy of the database password outside this KDBX. After a machine loss, the iCloud
 file cannot recover the hush secret that unlocks it. Treat one machine as the writer while iCloud is
 syncing to avoid conflicted KDBX copies.
+
+## sync to Bitwarden
+
+The official [Bitwarden CLI](https://bitwarden.com/help/cli/) supports create and edit operations,
+API-key login, and session-based vault access. Install it, then keep the three required credentials
+in hush:
+
+~~~sh
+brew install bitwarden-cli
+hush set bitwarden-client-id
+hush set bitwarden-client-secret
+hush set bitwarden-master-password
+~~~
+
+Bitwarden's personal API key authenticates the CLI, but [does not replace the master
+password](https://bitwarden.com/help/personal-api-key/). Vault reads and writes still require an
+unlock session. The npm-shipped scheduler handles that lifecycle without repeated interaction:
+
+~~~sh
+hush-bitwarden-schedule install --every 6h
+hush-bitwarden-schedule status
+~~~
+
+Install verifies all three hush names, performs bw login --apikey when needed, unlocks with
+--passwordenv, runs a value-free dry-run, then installs launchd. Each scheduled run obtains a
+short-lived session, syncs, and locks the CLI. API credentials, the master password, and the session
+are absent from argv, logs, the plist, and the mode-0600 metadata config.
+
+The underlying command can also be used inside any already-unlocked Bitwarden CLI session:
+
+~~~sh
+hush sync bitwarden --dry-run
+hush sync bitwarden                         # all non-auth secrets -> folder hush
+hush sync bitwarden --folder backups api-key deploy-key
+hush sync bitwarden --exclude local-only
+~~~
+
+Missing login items are created and unique items are updated. Exact duplicate names in the target
+folder fail closed. Existing item JSON flows directly from bw into the JSON transformer, and encoded
+create/edit bodies flow directly into bw over stdin. Passwords never enter argv, stdout, logs, or
+temp files. The three default Bitwarden auth secrets are always excluded. Bitwarden automatically
+pushes successful create and edit changes to the server.
+
+The core sync is Bash plus Node and follows the platforms supported by hush and bw. The included
+scheduler currently installs a macOS LaunchAgent. hush-bitwarden-schedule remove unloads it while
+retaining the non-secret config and hush credentials.
 
 ## not a vault
 

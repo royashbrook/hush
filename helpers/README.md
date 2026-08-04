@@ -43,6 +43,27 @@ Database and entry passwords travel to `keepassxc-cli` only on stdin. The databa
 is always excluded from sync. `remove` unloads launchd while retaining the KDBX and config. Keep a
 separate durable copy of the database password and avoid simultaneous iCloud writers.
 
+## hush-bitwarden-schedule, unattended hosted-vault sync (macOS)
+
+The npm package installs this Node helper beside hush:
+
+~~~sh
+brew install bitwarden-cli
+hush-bitwarden-schedule install --every 6h
+hush-bitwarden-schedule status
+hush-bitwarden-schedule remove
+~~~
+
+It expects bitwarden-client-id, bitwarden-client-secret, and bitwarden-master-password in hush,
+prompting through hush for any missing value. The API key authenticates bw; the master password is
+still required to unlock vault data. Each run obtains a short-lived session, invokes
+hush sync bitwarden, then locks the CLI.
+
+Credentials and session values stay out of argv, logs, plist, and the mode-0600 metadata config. The
+three auth-secret names are always excluded from sync. Use --folder, repeatable --exclude,
+positional secret names, and --every to configure selection. remove unloads launchd but retains the
+config and hush credentials.
+
 ## hush-backup, encrypted off-machine backup of the store (macOS + iCloud)
 
 A hush store lives only in the local OS keychain, so a wipe means re-provisioning every secret.

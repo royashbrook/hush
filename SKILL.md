@@ -115,6 +115,7 @@ hush pipe <name> -- <cmd>                # stream the value to <cmd>'s stdin
 hush sync lastpass [name ...]            # upsert selected names, or all names when omitted
 hush sync lastpass --exclude <name>       # keep a local-only name out of bulk sync; repeatable
 hush sync keepass --database <file.kdbx> --db-secret <name> [name ...]
+hush sync bitwarden [name ...]           # requires an unlocked BW_SESSION
 hush list                                # NAMES only, never values
 hush rename <old> <new>                  # move to a new name (value moved INTERNALLY, never re-asked)
 hush rm   <name>                         # delete
@@ -188,6 +189,36 @@ Install creates and populates an absent database. If the database-password secre
 it invokes hush's hidden prompt. Keep a separate durable copy of that password, because a recovered
 KDBX cannot recover the local hush secret needed to open it. Avoid simultaneous writers while the
 file is syncing through iCloud.
+
+For a hosted Bitwarden copy, use the official bw CLI. API-key login needs the client ID and client
+secret, but Bitwarden still requires the master password to unlock vault data:
+
+~~~
+hush set bitwarden-client-id
+hush set bitwarden-client-secret
+hush set bitwarden-master-password
+hush-bitwarden-schedule install --every 6h
+hush-bitwarden-schedule status
+~~~
+
+The Node scheduler performs API-key login only when unauthenticated, unlocks with
+--passwordenv BW_PASSWORD, passes a short-lived BW_SESSION only to the sync child, then locks the
+CLI. Credentials and session values never reach argv, logs, plist, config, or stdout. Missing hush
+credentials are collected through the hidden prompt during install. The default three auth-secret
+names are forcibly excluded from backup.
+
+Inside an already unlocked bw session, the core target is:
+
+~~~
+hush sync bitwarden --dry-run
+hush sync bitwarden
+hush sync bitwarden --folder backups foo
+hush sync bitwarden --exclude local-only
+~~~
+
+It creates missing login items, updates unique items, and fails closed on duplicate exact names in
+the target folder. Existing JSON and encoded create/edit bodies move through pipes, never temp files
+or argv. The core uses Bash plus Node. Scheduling currently targets macOS launchd.
 
 > **Escape hatch, `hush file <name> <path>`.** A few tools can *only* read a credential from a file
 > path (a service-account JSON, a cert, a kubeconfig). For those, and only those, `hush file` writes a
@@ -291,9 +322,9 @@ a sticky note.
 Treat it as an **on-ramp.** Two wins land immediately, even with no `hush exec` in sight: you can
 generate secrets securely from day one, and on an old project with values scattered across `.env`s,
 dashboards, and your head, a few pastes get them (a) centralized and (b) agent-usable from then on.
-For a durable, shareable home, **sync them onward**. LastPass and KeePassXC have built-in one-way
-sync targets, and *extending hush* covers other CLIs and store backends. hush gets you consistent;
-the sync makes it permanent.
+For a durable, shareable home, **sync them onward**. LastPass, KeePassXC, and Bitwarden have built-in
+one-way sync targets, and *extending hush* covers other CLIs and store backends. hush gets you
+consistent; the sync makes it permanent.
 
 ## extending hush to the tools you already use
 
@@ -301,7 +332,8 @@ The friction this kills: *"go create this key, then paste it into GitHub / Wrang
 tell me when it's there."* If the agent already has the CLI for that tool, it shouldn't hand that
 back, it should just do it. Two directions:
 
-1. **Push a hush-held secret INTO another tool.** LastPass and KeePassXC are built in as `hush sync` targets.
+1. **Push a hush-held secret INTO another tool.** LastPass, KeePassXC, and Bitwarden are built in as
+   `hush sync` targets.
    Anything else with a CLI that takes the value on stdin is already a consumer via `pipe`:
    ```
    hush pipe deploy-token -- gh secret set DEPLOY_TOKEN          # into GitHub Actions
