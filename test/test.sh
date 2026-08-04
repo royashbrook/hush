@@ -133,5 +133,17 @@ else
   bad "isolated LastPass schedule suite"
 fi
 
+if bash "$(dirname "${BASH_SOURCE[0]:-$0}")/keepass-sync.sh"; then
+  ok "isolated KeePass sync suite"
+else
+  bad "isolated KeePass sync suite"
+fi
+
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/keepass-schedule.mjs"; then
+  ok "isolated KeePass schedule suite"
+else
+  bad "isolated KeePass schedule suite"
+fi
+
 echo "# done. failures: $fails"
 [ "$fails" -eq 0 ]

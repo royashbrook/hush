@@ -114,6 +114,7 @@ hush run NAME=VAR [N2=V2 ...] -- <cmd>   # fetch into env vars, exec <cmd> (valu
 hush pipe <name> -- <cmd>                # stream the value to <cmd>'s stdin
 hush sync lastpass [name ...]            # upsert selected names, or all names when omitted
 hush sync lastpass --exclude <name>       # keep a local-only name out of bulk sync; repeatable
+hush sync keepass --database <file.kdbx> --db-secret <name> [name ...]
 hush list                                # NAMES only, never values
 hush rename <old> <new>                  # move to a new name (value moved INTERNALLY, never re-asked)
 hush rm   <name>                         # delete
@@ -156,6 +157,37 @@ stores the master password under
 failed setup installs nothing. A revoked or expired LastPass trust grant fails closed and requires
 interactive setup again. Without `--auto-login`, the helper schedules sync but requires an
 already-live `lpass` session. The helper currently installs a macOS LaunchAgent only.
+
+For an offline-first copy, sync into a KeePassXC KDBX file. The core command works anywhere both
+hush and `keepassxc-cli` run:
+
+```
+hush set hush-keepass-master-password
+hush sync keepass --database /path/to/hush.kdbx \
+  --db-secret hush-keepass-master-password --init
+hush sync keepass --database /path/to/hush.kdbx \
+  --db-secret hush-keepass-master-password --dry-run
+```
+
+`--init` refuses overwrite. Omit names to sync every secret except the database-password secret,
+use positional names for a subset, and repeat `--exclude <name>` for local-only values. Writes go to
+the password field under group `hush`. Values and the KDBX password travel only over stdin. Missing
+entries are created, unique entries are updated, duplicates fail closed, and multiline values are
+refused.
+
+On macOS, the npm package includes a Node helper that defaults to
+`iCloud Drive/hush/hush.kdbx` and installs a per-user LaunchAgent:
+
+```
+hush-keepass-schedule install --every 6h
+hush-keepass-schedule status
+hush-keepass-schedule remove
+```
+
+Install creates and populates an absent database. If the database-password secret does not exist,
+it invokes hush's hidden prompt. Keep a separate durable copy of that password, because a recovered
+KDBX cannot recover the local hush secret needed to open it. Avoid simultaneous writers while the
+file is syncing through iCloud.
 
 > **Escape hatch, `hush file <name> <path>`.** A few tools can *only* read a credential from a file
 > path (a service-account JSON, a cert, a kubeconfig). For those, and only those, `hush file` writes a
@@ -259,9 +291,9 @@ a sticky note.
 Treat it as an **on-ramp.** Two wins land immediately, even with no `hush exec` in sight: you can
 generate secrets securely from day one, and on an old project with values scattered across `.env`s,
 dashboards, and your head, a few pastes get them (a) centralized and (b) agent-usable from then on.
-For a durable, shareable home, **sync them onward** into a real secret manager. LastPass has a
-built-in one-way sync, and *extending hush* covers other CLIs and store backends. hush gets you
-consistent; the sync makes it permanent.
+For a durable, shareable home, **sync them onward**. LastPass and KeePassXC have built-in one-way
+sync targets, and *extending hush* covers other CLIs and store backends. hush gets you consistent;
+the sync makes it permanent.
 
 ## extending hush to the tools you already use
 
@@ -269,7 +301,7 @@ The friction this kills: *"go create this key, then paste it into GitHub / Wrang
 tell me when it's there."* If the agent already has the CLI for that tool, it shouldn't hand that
 back, it should just do it. Two directions:
 
-1. **Push a hush-held secret INTO another tool.** LastPass is built in as `hush sync lastpass`.
+1. **Push a hush-held secret INTO another tool.** LastPass and KeePassXC are built in as `hush sync` targets.
    Anything else with a CLI that takes the value on stdin is already a consumer via `pipe`:
    ```
    hush pipe deploy-token -- gh secret set DEPLOY_TOKEN          # into GitHub Actions

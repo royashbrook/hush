@@ -71,6 +71,7 @@ hush mint app-operator-key                    # generate + store a random one
 hush run TOKEN=my-vendor-token -- some-cmd    # inject into a command, never printed
 hush sync lastpass --dry-run                  # preview a one-way LastPass sync
 hush sync lastpass                            # upsert every name under LastPass group "hush"
+hush sync keepass --database vault.kdbx --db-secret keepass-password --dry-run
 hush list                                     # names only, never values
 ```
 
@@ -140,6 +141,53 @@ An API key cannot replace this login: the published [LastPass Business
 API](https://developer.lastpass.com/business/docs/index.md) manages accounts, companies, and
 reports, but does not expose vault-item writes. The scheduler is Node so other native schedulers can
 be added without changing the sync contract, but this release installs launchd on macOS only.
+
+## sync to a local KeePass database
+
+[KeePassXC](https://keepassxc.org/) opens the same encrypted KDBX file on macOS, Linux, and Windows.
+Put that file in an iCloud Drive folder and it becomes an offline-first backup that another iCloud
+machine can open without a service login:
+
+```sh
+brew install --cask keepassxc
+hush set hush-keepass-master-password
+hush sync keepass --database "$HOME/Library/Mobile Documents/com~apple~CloudDocs/hush/hush.kdbx" \
+  --db-secret hush-keepass-master-password --init
+```
+
+`--init` refuses to overwrite a file. Later runs omit it and upsert entries in group `hush`:
+
+```sh
+hush sync keepass --database "$HOME/Library/Mobile Documents/com~apple~CloudDocs/hush/hush.kdbx" \
+  --db-secret hush-keepass-master-password --dry-run
+hush sync keepass --database "$HOME/Library/Mobile Documents/com~apple~CloudDocs/hush/hush.kdbx" \
+  --db-secret hush-keepass-master-password --exclude local-only
+```
+
+The database password and entry passwords reach `keepassxc-cli` only over stdin. They are never put
+on argv, stdout, logs, or a temp plaintext file. The database-password secret is always excluded.
+Missing entries are created, unique entries are updated, duplicate names fail closed, and multiline
+values are refused rather than truncated.
+
+### schedule it into iCloud (macOS)
+
+The npm package includes a Node/launchd helper. A cold setup creates the database if absent, asks for
+its password through hush when needed, performs the first sync, and loads the recurring job:
+
+```sh
+npm install -g @royashbrook/hush
+brew install --cask keepassxc
+hush-keepass-schedule install --every 6h
+hush-keepass-schedule status
+```
+
+The default destination is `iCloud Drive/hush/hush.kdbx`. Use `--database`, `--db-secret`, `--group`,
+repeatable `--exclude`, or positional names to narrow it. `remove` unloads the LaunchAgent but keeps
+the database and mode-0600 metadata config.
+
+Keep one durable copy of the database password outside this KDBX. After a machine loss, the iCloud
+file cannot recover the hush secret that unlocks it. Treat one machine as the writer while iCloud is
+syncing to avoid conflicted KDBX copies.
 
 ## not a vault
 
