@@ -108,30 +108,38 @@ The sync runs wherever both hush and the official `lpass` CLI run: macOS, Linux,
 official CLI does not currently provide a native PowerShell or Node entry point, so native Windows
 remains limited by that dependency rather than by the hush store backend.
 
-### schedule it while the LastPass CLI session is active (macOS)
+### schedule it with experimental auto-login (macOS)
 
 A cold npm install includes an optional Node-based launchd helper:
 
 ```sh
 npm install -g @royashbrook/hush
 brew install lastpass-cli
-LPASS_AGENT_TIMEOUT=0 lpass login --trust you@example.com
-hush-lastpass-schedule install --every 6h
+hush-lastpass-schedule install --auto-login --email you@example.com --every 6h
 hush-lastpass-schedule status
 ```
 
-`LPASS_AGENT_TIMEOUT=0` keeps the official CLI's in-memory agent alive for the current login
-session. The scheduler never stores LastPass login material and never uses `lpass --plaintext-key`.
-After a reboot, logout, or expired session, jobs fail closed until the interactive login is repeated.
-Use `hush-lastpass-schedule remove` to unload the job; its non-secret config is retained.
+Auto-login is experimental. Its complete contract passes deterministic fake-CLI tests, but we could
+not complete a real trusted login because Homebrew `lastpass-cli` crashed in its MFA path before any
+vault access. This matches upstream [`lastpass-cli` issue
+#719](https://github.com/lastpass/lastpass-cli/issues/719). It may work with account/MFA combinations
+unaffected by that bug, but it is not live-tested.
+
+The design performs one interactive `lpass login --trust`, then asks once for the LastPass master
+password through hush's hidden prompt. Scheduled runs are intended to use that local Keychain value
+to restore the `lpass` session after reboot. This is explicit opt-in: no LastPass login material is
+stored unless `--auto-login` is present. The helper never uses `lpass --plaintext-key`, and its
+dedicated login secret is always excluded from vault sync. Failed setup installs nothing; revoked or
+expired trust makes later jobs fail closed.
+
+Use `hush-lastpass-schedule remove` to unload the job. It retains the non-secret config and the hush
+login secret so removal cannot silently destroy credentials. Delete that secret separately with
+`hush rm hush-lastpass-master-password` if you want to revoke the opt-in completely.
 
 An API key cannot replace this login: the published [LastPass Business
 API](https://developer.lastpass.com/business/docs/index.md) manages accounts, companies, and
-reports, but does not expose vault-item writes. LastPass Authenticator users may also hit the
-upstream [`lastpass-cli` MFA failure](https://github.com/lastpass/lastpass-cli/issues/719), which we
-reproduced as a macOS segmentation fault before any vault access. The scheduler is Node so other
-native schedulers can be added without changing the sync contract, but this release installs
-launchd on macOS only.
+reports, but does not expose vault-item writes. The scheduler is Node so other native schedulers can
+be added without changing the sync contract, but this release installs launchd on macOS only.
 
 ## not a vault
 

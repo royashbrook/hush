@@ -139,20 +139,23 @@ entries, fails on duplicate names, and uses a blocking server sync before report
 travel on stdin and `lpass` output is suppressed. Multiline values are refused rather than silently
 truncated. The official LastPass CLI supports macOS, Linux, and Cygwin, not native PowerShell/Node.
 
-For scheduled macOS sync while the LastPass CLI session is active, the npm package also installs a
-Node helper:
+For experimental opt-in macOS sync after reboot, the npm package also installs the Node helper:
 
 ```
-LPASS_AGENT_TIMEOUT=0 lpass login --trust you@example.com
-hush-lastpass-schedule install --every 6h
+hush-lastpass-schedule install --auto-login --email you@example.com --every 6h
 hush-lastpass-schedule status
 hush-lastpass-schedule remove
 ```
 
-The helper stores no LastPass login material and never uses `lpass --plaintext-key`. A reboot,
-logout, or expired session makes scheduled runs fail closed until interactive login is repeated.
-LastPass Authenticator users may hit the upstream `lastpass-cli` out-of-band MFA failure documented
-in issue #719. The helper currently installs a macOS LaunchAgent only.
+The auto-login contract passes deterministic fake-CLI tests but is not live-tested: Homebrew
+`lastpass-cli` crashed during out-of-band MFA before vault access, matching upstream issue #719.
+Accounts unaffected by that bug may work. Setup performs one interactive trusted-device login and
+stores the master password under
+`hush-lastpass-master-password` through hush's hidden prompt. The runner reauthenticates through
+`hush pipe`, never uses `lpass --plaintext-key`, and always excludes that auth secret from sync. A
+failed setup installs nothing. A revoked or expired LastPass trust grant fails closed and requires
+interactive setup again. Without `--auto-login`, the helper schedules sync but requires an
+already-live `lpass` session. The helper currently installs a macOS LaunchAgent only.
 
 > **Escape hatch, `hush file <name> <path>`.** A few tools can *only* read a credential from a file
 > path (a service-account JSON, a cert, a kubeconfig). For those, and only those, `hush file` writes a
