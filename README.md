@@ -69,6 +69,8 @@ printf '%s' "$TOK" | hush set my-vendor-token # ...or pipe it in (scripts/CI), s
 hush set my-vendor-token --gui                # force the dialog (or --tty / --pipe; HUSH_PROMPT= too)
 hush mint app-operator-key                    # generate + store a random one
 hush run TOKEN=my-vendor-token -- some-cmd    # inject into a command, never printed
+hush sync lastpass --dry-run                  # preview a one-way LastPass sync
+hush sync lastpass                            # upsert every name under LastPass group "hush"
 hush list                                     # names only, never values
 ```
 
@@ -82,6 +84,62 @@ Naming: keep the default `hush` namespace and **prefix names by project** (`blam
 genuinely separate store, not per-project. Need to fix an existing name? `hush rename <old> <new>`
 moves the value internally (never re-asked, never printed). Full docs + the portable contract:
 [SKILL.md](SKILL.md).
+
+## sync to LastPass
+
+Install and log into the official LastPass CLI once, then preview and run the sync:
+
+```sh
+brew install lastpass-cli                     # macOS
+lpass login you@example.com
+hush sync lastpass --dry-run                  # names + destinations only, no values fetched
+hush sync lastpass                            # all names -> hush/<name>
+hush sync lastpass --group team/secrets api-key deploy-key
+hush sync lastpass --exclude local-only       # repeat to keep local-only names out of bulk sync
+```
+
+This is an upsert into each LastPass entry's password field. A missing entry is created, a unique
+entry is updated, and duplicate LastPass names fail closed. Values move over stdin, never argv,
+stdout, or a temp file. Each write uses `--sync=now`, so hush reports success only after LastPass has
+synchronized it to the server. Multiline hush values are refused because `lpass` password-field
+edits accept one line and would otherwise truncate them.
+
+The sync runs wherever both hush and the official `lpass` CLI run: macOS, Linux, and Cygwin. The
+official CLI does not currently provide a native PowerShell or Node entry point, so native Windows
+remains limited by that dependency rather than by the hush store backend.
+
+### schedule it with experimental auto-login (macOS)
+
+A cold npm install includes an optional Node-based launchd helper:
+
+```sh
+npm install -g @royashbrook/hush
+brew install lastpass-cli
+hush-lastpass-schedule install --auto-login --email you@example.com --every 6h
+hush-lastpass-schedule status
+```
+
+Auto-login is experimental. Its complete contract passes deterministic fake-CLI tests, but we could
+not complete a real trusted login because Homebrew `lastpass-cli` crashed in its MFA path before any
+vault access. This matches upstream [`lastpass-cli` issue
+#719](https://github.com/lastpass/lastpass-cli/issues/719). It may work with account/MFA combinations
+unaffected by that bug, but it is not live-tested.
+
+The design performs one interactive `lpass login --trust`, then asks once for the LastPass master
+password through hush's hidden prompt. Scheduled runs are intended to use that local Keychain value
+to restore the `lpass` session after reboot. This is explicit opt-in: no LastPass login material is
+stored unless `--auto-login` is present. The helper never uses `lpass --plaintext-key`, and its
+dedicated login secret is always excluded from vault sync. Failed setup installs nothing; revoked or
+expired trust makes later jobs fail closed.
+
+Use `hush-lastpass-schedule remove` to unload the job. It retains the non-secret config and the hush
+login secret so removal cannot silently destroy credentials. Delete that secret separately with
+`hush rm hush-lastpass-master-password` if you want to revoke the opt-in completely.
+
+An API key cannot replace this login: the published [LastPass Business
+API](https://developer.lastpass.com/business/docs/index.md) manages accounts, companies, and
+reports, but does not expose vault-item writes. The scheduler is Node so other native schedulers can
+be added without changing the sync contract, but this release installs launchd on macOS only.
 
 ## not a vault
 
