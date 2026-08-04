@@ -1,7 +1,24 @@
 # helpers/
 
-Optional extras built ON TOP of the `hush` CLI. They are not part of core hush, not covered by its
-tests, and may be platform-specific. Use or ignore freely.
+Optional extras built ON TOP of the `hush` CLI. Some ship in the npm package and some remain
+repo-only. They may be platform-specific. Use or ignore freely.
+
+## hush-lastpass-schedule, unattended LastPass sync (macOS)
+
+The npm package installs this Node helper beside `hush`. It creates a per-user launchd job and can
+optionally restore the LastPass CLI login after reboot from a master password held in hush:
+
+```sh
+hush-lastpass-schedule install --auto-login --email you@example.com --every 6h
+hush-lastpass-schedule status
+hush-lastpass-schedule remove
+```
+
+Auto-login is explicit opt-in. Setup performs one interactive trusted-device login, then stores the
+master password through hush's hidden prompt. The auth secret is forcibly excluded from every sync,
+`lpass --plaintext-key` is never used, and expired device trust fails closed. `remove` unloads the
+job but retains both config and the hush secret. The implementation is Node and stdlib-only; job
+installation currently targets macOS launchd.
 
 ## hush-backup, encrypted off-machine backup of the store (macOS + iCloud)
 

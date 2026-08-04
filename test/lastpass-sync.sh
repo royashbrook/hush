@@ -27,19 +27,29 @@ printf '%s\n' '#!/bin/sh' \
 printf '%s\n' '#!/usr/bin/env bash' \
   'set -u' \
   'verb="${1:-}"; shift || true' \
-  'service=""; value=""; show=0' \
+  'service=""; value=""; bare_w=0' \
   'while [ $# -gt 0 ]; do' \
   '  case "$1" in' \
   '    -s) service="$2"; shift 2 ;;' \
-  '    -w) if [ $# -gt 1 ]; then value="$2"; shift 2; else show=1; shift; fi ;;' \
+  '    -w) if [ $# -gt 1 ]; then value="$2"; shift 2; else bare_w=1; shift; fi ;;' \
   '    *) shift ;;' \
   '  esac' \
   'done' \
   'case "$verb" in' \
-  '  add-generic-password) printf "%s" "$value" > "$HUSH_TEST_STORE/$service" ;;' \
+  '  add-generic-password)' \
+  '    if [ "$bare_w" -eq 1 ]; then' \
+  '      IFS= read -r value || true' \
+  '      IFS= read -r confirm || true' \
+  '      [ "$value" = "$confirm" ] || exit 46' \
+  '      printf "prompt-store\n" >> "$HUSH_TEST_SECURITY_LOG"' \
+  '    else' \
+  '      printf "argv-store\n" >> "$HUSH_TEST_SECURITY_LOG"' \
+  '    fi' \
+  '    printf "%s" "$value" > "$HUSH_TEST_STORE/$service"' \
+  '    ;;' \
   '  find-generic-password)' \
   '    [ -f "$HUSH_TEST_STORE/$service" ] || exit 44' \
-  '    if [ "$show" -eq 1 ]; then printf "fetch\n" >> "$HUSH_TEST_SECURITY_LOG"; cat "$HUSH_TEST_STORE/$service"; fi' \
+  '    if [ "$bare_w" -eq 1 ]; then printf "fetch\n" >> "$HUSH_TEST_SECURITY_LOG"; cat "$HUSH_TEST_STORE/$service"; fi' \
   '    exit 0' \
   '    ;;' \
   '  delete-generic-password) rm -f "$HUSH_TEST_STORE/$service" ;;' \
@@ -69,6 +79,9 @@ chmod +x "$STUB/uname" "$STUB/security" "$STUB/lpass"
 
 printf '%s' "$SENTINEL" | run_hush set sync-a --pipe >/dev/null 2>&1
 run_hush mint sync-b --bytes 4 >/dev/null 2>&1
+printf '%s' 'login-only-test-value' | run_hush set sync-auth --pipe >/dev/null 2>&1
+grep -qF 'prompt-store' "$HUSH_TEST_SECURITY_LOG" && ok "single-line macOS stores use stdin prompt" || bad "single-line macOS store used argv"
+grep -qF 'argv-store' "$HUSH_TEST_SECURITY_LOG" && bad "single-line secret reached security argv" || ok "single-line secret stays out of security argv"
 
 : > "$HUSH_LPASS_LOG"
 out="$(HUSH_LPASS_EXPECT="$SENTINEL" run_hush sync lastpass --group team/secrets sync-a 2>&1)"; rc=$?
@@ -90,10 +103,16 @@ printf '%s' "$out" | grep -q 'value not read' && ok "dry-run skips fetch" || bad
 : > "$HUSH_LPASS_LOG"
 listed="$(run_hush list 2>&1)"
 printf '%s\n' "$listed" | grep -qx 'sync-a' && printf '%s\n' "$listed" | grep -qx 'sync-b' && ok "fake store lists both names" || bad "fake store list mismatch (got: $listed)"
-out="$(run_hush sync lastpass 2>&1)"; rc=$?
-[ "$rc" -eq 0 ] && ok "bulk sync succeeds" || bad "bulk sync failed (got: $out)"
-[ "$(grep -c '^edit ' "$HUSH_LPASS_LOG")" -eq 2 ] && ok "bulk sync selects all names" || bad "bulk selection wrong"
+out="$(run_hush sync lastpass --exclude sync-auth 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok "bulk sync with exclusion succeeds" || bad "bulk exclusion failed (got: $out)"
+[ "$(grep -c '^edit ' "$HUSH_LPASS_LOG")" -eq 2 ] && ok "bulk sync selects all non-excluded names" || bad "bulk selection wrong"
 grep -q 'hush/sync-a$' "$HUSH_LPASS_LOG" && grep -q 'hush/sync-b$' "$HUSH_LPASS_LOG" && ok "bulk destinations" || bad "bulk destinations wrong"
+grep -q 'sync-auth$' "$HUSH_LPASS_LOG" && bad "excluded login secret reached LastPass" || ok "excluded login secret stays local"
+
+: > "$HUSH_LPASS_LOG"
+out="$(run_hush sync lastpass --exclude sync-auth sync-auth 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok "all-excluded selection is a clean no-op" || bad "all-excluded selection failed"
+grep -q '^edit ' "$HUSH_LPASS_LOG" && bad "all-excluded selection wrote remotely" || ok "all-excluded selection makes no write"
 
 : > "$HUSH_LPASS_LOG"
 out="$(HUSH_LPASS_STATUS_RC=1 run_hush sync lastpass sync-a 2>&1)"; rc=$?

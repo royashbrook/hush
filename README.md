@@ -95,6 +95,7 @@ lpass login you@example.com
 hush sync lastpass --dry-run                  # names + destinations only, no values fetched
 hush sync lastpass                            # all names -> hush/<name>
 hush sync lastpass --group team/secrets api-key deploy-key
+hush sync lastpass --exclude local-only       # repeat to keep local-only names out of bulk sync
 ```
 
 This is an upsert into each LastPass entry's password field. A missing entry is created, a unique
@@ -106,6 +107,33 @@ edits accept one line and would otherwise truncate them.
 The sync runs wherever both hush and the official `lpass` CLI run: macOS, Linux, and Cygwin. The
 official CLI does not currently provide a native PowerShell or Node entry point, so native Windows
 remains limited by that dependency rather than by the hush store backend.
+
+### schedule it without logging in after every reboot (macOS)
+
+A cold npm install includes an optional Node-based launchd helper:
+
+```sh
+npm install -g @royashbrook/hush
+brew install lastpass-cli
+hush-lastpass-schedule install --auto-login --email you@example.com --every 6h
+hush-lastpass-schedule status
+```
+
+Setup performs one interactive `lpass login --trust`, then asks once for the LastPass master
+password through hush's hidden prompt. Scheduled runs can use that local Keychain value to restore
+the `lpass` session after a reboot. This is explicit opt-in: no LastPass login material is stored
+unless `--auto-login` is present. The helper never uses `lpass --plaintext-key`, and its dedicated
+login secret is always excluded from vault sync. If LastPass revokes or expires the trusted-device
+grant, the job fails closed until setup is run interactively again.
+
+Use `hush-lastpass-schedule remove` to unload the job. It retains the non-secret config and the hush
+login secret so removal cannot silently destroy credentials. Delete that secret separately with
+`hush rm hush-lastpass-master-password` if you want to revoke the opt-in completely.
+
+An API key cannot replace this login: the published [LastPass Business
+API](https://developer.lastpass.com/business/docs/index.md) manages accounts, companies, and
+reports, but does not expose vault-item writes. The scheduler is Node so other native schedulers can
+be added without changing the sync contract, but this release installs launchd on macOS only.
 
 ## not a vault
 

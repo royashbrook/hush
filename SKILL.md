@@ -113,6 +113,7 @@ So a secret that doesn't need the human never blocks on the human.
 hush run NAME=VAR [N2=V2 ...] -- <cmd>   # fetch into env vars, exec <cmd> (value only in the child)
 hush pipe <name> -- <cmd>                # stream the value to <cmd>'s stdin
 hush sync lastpass [name ...]            # upsert selected names, or all names when omitted
+hush sync lastpass --exclude <name>       # keep a local-only name out of bulk sync; repeatable
 hush list                                # NAMES only, never values
 hush rename <old> <new>                  # move to a new name (value moved INTERNALLY, never re-asked)
 hush rm   <name>                         # delete
@@ -130,12 +131,28 @@ in:
 hush sync lastpass --dry-run                  # validate login, list destinations, read no values
 hush sync lastpass                            # all names -> LastPass hush/<name>
 hush sync lastpass --group team/secrets foo   # selected name -> team/secrets/foo
+hush sync lastpass --exclude local-only       # bulk sync except explicitly local names
 ```
 
 The command edits only the LastPass password field. It creates missing entries, updates unique
 entries, fails on duplicate names, and uses a blocking server sync before reporting success. Values
 travel on stdin and `lpass` output is suppressed. Multiline values are refused rather than silently
 truncated. The official LastPass CLI supports macOS, Linux, and Cygwin, not native PowerShell/Node.
+
+For opt-in unattended macOS sync after reboot, the npm package also installs the Node helper:
+
+```
+hush-lastpass-schedule install --auto-login --email you@example.com --every 6h
+hush-lastpass-schedule status
+hush-lastpass-schedule remove
+```
+
+Setup performs one interactive trusted-device login and stores the master password under
+`hush-lastpass-master-password` through hush's hidden prompt. The runner reauthenticates through
+`hush pipe`, never uses `lpass --plaintext-key`, and always excludes that auth secret from sync. A
+revoked or expired LastPass trust grant fails closed and requires interactive setup again. Without
+`--auto-login`, the helper schedules sync but requires an already-live `lpass` session. The helper
+currently installs a macOS LaunchAgent only.
 
 > **Escape hatch, `hush file <name> <path>`.** A few tools can *only* read a credential from a file
 > path (a service-account JSON, a cert, a kubeconfig). For those, and only those, `hush file` writes a

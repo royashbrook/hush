@@ -69,8 +69,15 @@ b_exists() {
 b_store() {
   local name="$1" value="$2"
   case "$BACKEND" in
-    mac)     security add-generic-password -U -a "$name" -s "$(svc "$name")" -w "$value" >/dev/null 2>&1 \
-               || die "keychain store failed for '$name'" ;;
+    mac)
+      # A bare trailing -w makes security prompt on stdin, keeping ordinary values out of argv.
+      # Its prompt protocol is line-oriented, so preserve the legacy argv path for multiline data.
+      case "$value" in
+        *$'\n'*) security add-generic-password -U -a "$name" -s "$(svc "$name")" -w "$value" >/dev/null 2>&1 ;;
+        *)       printf '%s\n%s\n' "$value" "$value" \
+                   | security add-generic-password -U -a "$name" -s "$(svc "$name")" -w >/dev/null 2>&1 ;;
+      esac || die "keychain store failed for '$name'"
+      ;;
     linux)   printf '%s' "$value" | secret-tool store --label="$(svc "$name")" hush "$NS" name "$name" >/dev/null 2>&1 \
                || die "secret-tool store failed for '$name'" ;;
     windows) printf '%s' "$value" | winps store "$name" >/dev/null 2>&1 \
@@ -191,7 +198,8 @@ hush — a secret store for AI agents. values are never printed.
   hush pipe <name> -- <cmd...>     stream the value to <cmd>'s stdin (e.g. wrangler secret put)
   hush sync lastpass [options] [name ...]
                                    upsert selected secrets into LastPass password fields. with no
-                                   names, sync all. options: --group <path> (default: hush), --dry-run
+                                   names, sync all. options: --group <path> (default: hush),
+                                   --exclude <name> (repeatable), --dry-run
   hush file <name> <path>          write the value to a 0600 file (refuses inside a git repo)
   hush list                        list NAMES only, read straight from the store (never values)
   hush rename <old> <new> [--force]   (alias: mv)
@@ -309,12 +317,15 @@ case "$cmd" in
     target="${1:-}"; [ -n "$target" ] || die "sync: missing target (supported: lastpass)"; shift
     [ "$target" = lastpass ] || die "sync: unsupported target '$target' (supported: lastpass)"
 
-    group="hush"; dry_run=0; names=()
+    group="hush"; dry_run=0; names=(); excludes=()
     while [ $# -gt 0 ]; do
       case "$1" in
         --group)
           [ $# -ge 2 ] || die "sync lastpass: --group needs a path"
           group="$2"; shift 2 ;;
+        --exclude)
+          [ $# -ge 2 ] || die "sync lastpass: --exclude needs a secret name"
+          excludes+=("$2"); shift 2 ;;
         --dry-run) dry_run=1; shift ;;
         --) shift; while [ $# -gt 0 ]; do names+=("$1"); shift; done ;;
         -*) die "sync lastpass: unknown option '$1'" ;;
@@ -324,6 +335,12 @@ case "$cmd" in
     [ -n "$group" ] || die "sync lastpass: --group cannot be empty"
     case "$group" in *$'\n'*) die "sync lastpass: --group cannot contain a newline" ;; esac
     [ "${group%/}" = "$group" ] || die "sync lastpass: --group cannot end with '/'"
+    if [ "${#excludes[@]}" -gt 0 ]; then
+      for excluded in "${excludes[@]}"; do
+        [ -n "$excluded" ] || die "sync lastpass: --exclude cannot be empty"
+        case "$excluded" in *$'\n'*) die "sync lastpass: --exclude cannot contain a newline" ;; esac
+      done
+    fi
 
     lpass="${HUSH_LPASS:-lpass}"
     command -v "$lpass" >/dev/null 2>&1 || die "sync lastpass: '$lpass' is required (install lastpass-cli, then run: lpass login <email>)"
@@ -333,6 +350,20 @@ case "$cmd" in
       while IFS= read -r name; do [ -n "$name" ] && names+=("$name"); done < <(b_list)
     fi
     [ "${#names[@]}" -gt 0 ] || die "sync lastpass: no hush secrets found in namespace '$NS'"
+
+    selected=()
+    for name in "${names[@]}"; do
+      skip=0
+      if [ "${#excludes[@]}" -gt 0 ]; then
+        for excluded in "${excludes[@]}"; do [ "$name" = "$excluded" ] && skip=1; done
+      fi
+      [ "$skip" -eq 1 ] || selected+=("$name")
+    done
+    if [ "${#selected[@]}" -eq 0 ]; then
+      printf 'hush: no LastPass sync candidates remain after exclusions.\n'
+      exit 0
+    fi
+    names=("${selected[@]}")
 
     # Validate every local name before the first remote write. This catches selection mistakes
     # without leaving a half-updated LastPass vault. Values are fetched only at the write boundary.
