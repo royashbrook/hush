@@ -186,9 +186,11 @@ hush-keepass-schedule remove
 ```
 
 Install creates and populates an absent database. If the database-password secret does not exist,
-it invokes hush's hidden prompt. Keep a separate durable copy of that password, because a recovered
-KDBX cannot recover the local hush secret needed to open it. Avoid simultaneous writers while the
-file is syncing through iCloud.
+it invokes hush's hidden prompt. Scheduled runs update an encrypted local mirror, then atomically
+publish a completed KDBX to iCloud; KeePassXC never opens CloudDocs headlessly. A blocked publish
+times out after 30 seconds. Keep a separate durable copy of the password, because a recovered KDBX
+cannot recover the local hush secret needed to open it. Avoid simultaneous writers while iCloud
+syncs the file.
 
 For a hosted Bitwarden copy, use the official bw CLI. API-key login needs the client ID and client
 secret, but Bitwarden still requires the master password to unlock vault data:

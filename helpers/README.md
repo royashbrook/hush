@@ -36,12 +36,15 @@ hush-keepass-schedule remove
 
 The default database is `iCloud Drive/hush/hush.kdbx`. Setup asks through hush for
 `hush-keepass-master-password` when absent, creates and populates an absent database, then stores
-only mode-0600 metadata in its config. Use `--database`, `--db-secret`, `--group`, repeatable
-`--exclude`, and positional secret names to change the selection.
+only mode-0600 metadata in its config. Scheduled runs update an encrypted local mirror under
+`Application Support/hush` and atomically publish the completed KDBX. KeePassXC never opens
+CloudDocs headlessly; a blocked publish times out after 30 seconds. Use `--database`, `--db-secret`,
+`--group`, repeatable `--exclude`, and positional secret names to change the selection.
 
 Database and entry passwords travel to `keepassxc-cli` only on stdin. The database-password secret
-is always excluded from sync. `remove` unloads launchd while retaining the KDBX and config. Keep a
-separate durable copy of the database password and avoid simultaneous iCloud writers.
+is always excluded from sync. `remove` unloads launchd while retaining the destination KDBX, local
+mirror, and config. Keep a separate durable copy of the database password and avoid simultaneous
+iCloud writers.
 
 ## hush-bitwarden-schedule, unattended hosted-vault sync (macOS)
 

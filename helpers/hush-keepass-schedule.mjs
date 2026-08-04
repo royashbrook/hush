@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +32,9 @@ options:
   --every <Nm|Nh|Nd>      interval, minimum 5m (default: 6h)
 
 install creates the database when absent and prompts through hush if the database password secret
-does not exist. keep a separate durable copy of that password: the kdbx cannot recover itself.
+does not exist. scheduled runs update a local encrypted mirror, then publish a completed copy to
+iCloud so KeePassXC never opens CloudDocs headlessly. keep a separate durable copy of the database
+password: the kdbx cannot recover itself.
 `);
   process.exit(code);
 }
@@ -64,6 +66,7 @@ function run(program, args, options = {}) {
     encoding: 'utf8',
     env: options.env || process.env,
     stdio: options.stdio || 'pipe',
+    timeout: options.timeout,
   });
 }
 
@@ -125,9 +128,9 @@ function parseInstall(args, home) {
   return result;
 }
 
-function syncArgs(config, mode = '') {
+function syncArgs(config, mode = '', database = config.mirror || config.database) {
   const args = [
-    'sync', 'keepass', '--database', config.database,
+    'sync', 'keepass', '--database', database,
     '--db-secret', config.dbSecret, '--group', config.group,
   ];
   for (const name of config.excludes) args.push('--exclude', name);
@@ -135,6 +138,28 @@ function syncArgs(config, mode = '') {
   else if (mode === 'dry-run') args.push('--dry-run');
   args.push(...config.names);
   return args;
+}
+
+function publishDatabase(config) {
+  if (!existsSync(config.mirror)) die(`local mirror is missing: ${config.mirror}`);
+  const temp = join(dirname(config.mirror), `.${basename(config.database)}.${process.pid}.publish`);
+  rmSync(temp, { force: true });
+  let error = '';
+  try {
+    copyFileSync(config.mirror, temp);
+    chmodSync(temp, 0o600);
+    const published = run('/bin/mv', ['-f', temp, config.database], { timeout: 30000 });
+    if (published.error?.code === 'ETIMEDOUT') {
+      error = `publishing to iCloud timed out after 30s: ${config.database}`;
+    } else if (published.status !== 0) {
+      error = `could not publish database to: ${config.database}`;
+    }
+  } catch {
+    error = `could not stage database for publishing: ${config.database}`;
+  } finally {
+    rmSync(temp, { force: true });
+  }
+  if (error) die(error);
 }
 
 function readConfig(path) {
@@ -152,8 +177,9 @@ function install(args) {
   const keepassxc = findExecutable('keepassxc-cli', process.env.HUSH_KEEPASS_SCHEDULE_KEEPASSXC);
   const launchctl = findExecutable('launchctl', process.env.HUSH_KEEPASS_SCHEDULE_LAUNCHCTL);
   const config = {
-    version: 1, hush, keepassxc,
+    version: 2, hush, keepassxc,
     database: options.database, dbSecret: options.dbSecret, group: options.group,
+    mirror: join(dirname(paths.config), 'keepass-mirror.kdbx'),
     excludes: options.excludes, names: options.names,
     every: options.every, seconds: options.seconds,
   };
@@ -167,14 +193,25 @@ function install(args) {
     if (stored.status !== 0) die('database password was not stored; nothing installed');
   }
 
+  try {
+    mkdirSync(dirname(config.mirror), { recursive: true, mode: 0o700 });
+    mkdirSync(dirname(config.database), { recursive: true, mode: 0o700 });
+  } catch { die('could not create the local mirror or destination directory'); }
   let mode = 'dry-run';
-  if (!existsSync(config.database)) {
-    try { mkdirSync(dirname(config.database), { recursive: true, mode: 0o700 }); }
-    catch { die(`could not create database directory: ${dirname(config.database)}`); }
-    mode = 'init';
+  if (!existsSync(config.mirror)) {
+    if (existsSync(config.database)) {
+      try {
+        copyFileSync(config.database, config.mirror);
+        chmodSync(config.mirror, 0o600);
+      } catch { die(`could not seed local mirror from: ${config.database}`); }
+    } else {
+      mode = 'init';
+    }
   }
   const preview = run(hush, syncArgs(config, mode), { env, stdio: 'inherit' });
   if (preview.status !== 0) die(`${mode === 'init' ? 'initial sync' : 'sync dry-run'} failed; nothing installed`);
+  chmodSync(config.mirror, 0o600);
+  publishDatabase(config);
 
   writeAtomic(paths.config, `${JSON.stringify(config, null, 2)}\n`);
   mkdirSync(dirname(paths.log), { recursive: true });
@@ -209,10 +246,13 @@ function install(args) {
 
 function scheduledRun(configPath) {
   const config = readConfig(configPath);
-  if (!existsSync(config.database)) die(`database is missing: ${config.database}`);
+  if (config.version !== 2 || !config.mirror) die('schedule config needs migration; run install again');
+  if (!existsSync(config.mirror)) die(`local mirror is missing: ${config.mirror}`);
   const env = { ...process.env, HUSH_KEEPASSXC: config.keepassxc };
-  const synced = run(config.hush, syncArgs(config), { env });
+  const synced = run(config.hush, syncArgs(config), { env, timeout: 300000 });
+  if (synced.error?.code === 'ETIMEDOUT') die('local KeePass sync timed out after 5m');
   if (synced.status !== 0) die(`sync failed with exit ${synced.status}`);
+  publishDatabase(config);
   process.stdout.write(`hush-keepass-schedule: ${new Date().toISOString()} sync ok\n`);
 }
 
@@ -230,7 +270,7 @@ function remove() {
   const launchctl = findExecutable('launchctl', process.env.HUSH_KEEPASS_SCHEDULE_LAUNCHCTL);
   run(launchctl, ['bootout', `gui/${process.getuid()}`, paths.plist]);
   rmSync(paths.plist, { force: true });
-  process.stdout.write(`hush-keepass-schedule: removed LaunchAgent. database and config retained at ${paths.config}.\n`);
+  process.stdout.write(`hush-keepass-schedule: removed LaunchAgent. destination, local mirror, and config retained at ${paths.config}.\n`);
 }
 
 const [command = 'help', ...args] = process.argv.slice(2);

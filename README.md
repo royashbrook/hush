@@ -182,9 +182,12 @@ hush-keepass-schedule install --every 6h
 hush-keepass-schedule status
 ```
 
-The default destination is `iCloud Drive/hush/hush.kdbx`. Use `--database`, `--db-secret`, `--group`,
-repeatable `--exclude`, or positional names to narrow it. `remove` unloads the LaunchAgent but keeps
-the database and mode-0600 metadata config.
+The default destination is `iCloud Drive/hush/hush.kdbx`. Scheduled runs update an encrypted local
+mirror under `Application Support/hush`, then atomically publish a completed copy. KeePassXC never
+opens CloudDocs from launchd, avoiding macOS's headless iCloud privacy block. A publish that takes
+more than 30 seconds fails with an actionable error instead of hanging. Use `--database`,
+`--db-secret`, `--group`, repeatable `--exclude`, or positional names to narrow it. `remove` unloads
+the LaunchAgent but keeps the destination, local mirror, and mode-0600 metadata config.
 
 Keep one durable copy of the database password outside this KDBX. After a machine loss, the iCloud
 file cannot recover the hush secret that unlocks it. Treat one machine as the writer while iCloud is
