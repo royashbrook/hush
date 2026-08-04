@@ -4,11 +4,13 @@
   "description": "a secret store for AI agents with one rule: the agent never sees the plaintext. get a secret once into the OS keychain, then inject it into commands forever. no get, cross-platform, MIT.",
   "bin": {
     "hush": "hush",
-    "hush-lastpass-schedule": "helpers/hush-lastpass-schedule.mjs"
+    "hush-lastpass-schedule": "helpers/hush-lastpass-schedule.mjs",
+    "hush-keepass-schedule": "helpers/hush-keepass-schedule.mjs"
   },
   "files": [
     "hush",
     "helpers/hush-lastpass-schedule.mjs",
+    "helpers/hush-keepass-schedule.mjs",
     "win/hush-backend.ps1",
     "SKILL.md",
     "AGENTS.md"

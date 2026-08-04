@@ -22,6 +22,27 @@ never used, failed setup installs nothing, and expired device trust fails closed
 the job but retains both config and the hush secret. The implementation is Node and stdlib-only; job
 installation currently targets macOS launchd.
 
+## hush-keepass-schedule, unattended local KDBX sync (macOS + iCloud)
+
+The npm package installs this Node helper beside `hush`. It creates or updates an encrypted KeePass
+database and schedules recurring sync with launchd:
+
+```sh
+brew install --cask keepassxc
+hush-keepass-schedule install --every 6h
+hush-keepass-schedule status
+hush-keepass-schedule remove
+```
+
+The default database is `iCloud Drive/hush/hush.kdbx`. Setup asks through hush for
+`hush-keepass-master-password` when absent, creates and populates an absent database, then stores
+only mode-0600 metadata in its config. Use `--database`, `--db-secret`, `--group`, repeatable
+`--exclude`, and positional secret names to change the selection.
+
+Database and entry passwords travel to `keepassxc-cli` only on stdin. The database-password secret
+is always excluded from sync. `remove` unloads launchd while retaining the KDBX and config. Keep a
+separate durable copy of the database password and avoid simultaneous iCloud writers.
+
 ## hush-backup, encrypted off-machine backup of the store (macOS + iCloud)
 
 A hush store lives only in the local OS keychain, so a wipe means re-provisioning every secret.

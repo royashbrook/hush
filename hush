@@ -200,6 +200,10 @@ hush — a secret store for AI agents. values are never printed.
                                    upsert selected secrets into LastPass password fields. with no
                                    names, sync all. options: --group <path> (default: hush),
                                    --exclude <name> (repeatable), --dry-run
+  hush sync keepass --database <file.kdbx> --db-secret <name> [options] [name ...]
+                                   upsert selected secrets into a KeePassXC database. with no names,
+                                   sync all except the database-password secret. options: --init,
+                                   --group <name> (default: hush), --exclude <name>, --dry-run
   hush file <name> <path>          write the value to a 0600 file (refuses inside a git repo)
   hush list                        list NAMES only, read straight from the store (never values)
   hush rename <old> <new> [--force]   (alias: mv)
@@ -314,9 +318,10 @@ case "$cmd" in
     ;;
   sync)
     backend_check
-    target="${1:-}"; [ -n "$target" ] || die "sync: missing target (supported: lastpass)"; shift
-    [ "$target" = lastpass ] || die "sync: unsupported target '$target' (supported: lastpass)"
+    target="${1:-}"; [ -n "$target" ] || die "sync: missing target (supported: lastpass, keepass)"; shift
+    case "$target" in lastpass|keepass) ;; *) die "sync: unsupported target '$target' (supported: lastpass, keepass)" ;; esac
 
+    if [ "$target" = lastpass ]; then
     group="hush"; dry_run=0; names=(); excludes=()
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -393,6 +398,146 @@ case "$cmd" in
       unset __val
       printf 'hush: synced %s -> LastPass %s (value not shown).\n' "$name" "$entry"
     done
+    else
+      database=""; db_secret=""; group="hush"; init=0; dry_run=0; names=(); excludes=()
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --database)
+            [ $# -ge 2 ] || die "sync keepass: --database needs a .kdbx path"
+            database="$2"; shift 2 ;;
+          --db-secret)
+            [ $# -ge 2 ] || die "sync keepass: --db-secret needs a hush secret name"
+            db_secret="$2"; shift 2 ;;
+          --group)
+            [ $# -ge 2 ] || die "sync keepass: --group needs a group name"
+            group="$2"; shift 2 ;;
+          --exclude)
+            [ $# -ge 2 ] || die "sync keepass: --exclude needs a secret name"
+            excludes+=("$2"); shift 2 ;;
+          --init) init=1; shift ;;
+          --dry-run) dry_run=1; shift ;;
+          --) shift; while [ $# -gt 0 ]; do names+=("$1"); shift; done ;;
+          -*) die "sync keepass: unknown option '$1'" ;;
+          *) names+=("$1"); shift ;;
+        esac
+      done
+
+      [ -n "$database" ] || die "sync keepass: --database is required"
+      case "$database" in *.kdbx) ;; *) die "sync keepass: --database must end in .kdbx" ;; esac
+      case "$database" in *$'\n'*) die "sync keepass: --database cannot contain a newline" ;; esac
+      [ -n "$db_secret" ] || die "sync keepass: --db-secret is required"
+      case "$db_secret" in *$'\n'*) die "sync keepass: --db-secret cannot contain a newline" ;; esac
+      [ -n "$group" ] || die "sync keepass: --group cannot be empty"
+      case "$group" in *$'\n'*|*/*) die "sync keepass: --group must be one name without slash or newline" ;; esac
+      if [ "${#excludes[@]}" -gt 0 ]; then
+        for excluded in "${excludes[@]}"; do
+          [ -n "$excluded" ] || die "sync keepass: --exclude cannot be empty"
+          case "$excluded" in *$'\n'*) die "sync keepass: --exclude cannot contain a newline" ;; esac
+        done
+      fi
+
+      kpxc="${HUSH_KEEPASSXC:-keepassxc-cli}"
+      command -v "$kpxc" >/dev/null 2>&1 || die "sync keepass: '$kpxc' is required (install KeePassXC)"
+      b_exists "$db_secret" || die "sync keepass: no database-password secret named '$db_secret'"
+      if [ "$init" -eq 1 ]; then
+        [ ! -e "$database" ] || die "sync keepass: --init refuses to overwrite existing database '$database'"
+      else
+        [ -f "$database" ] || die "sync keepass: database not found at '$database' (use --init to create it)"
+      fi
+
+      if [ "${#names[@]}" -eq 0 ]; then
+        while IFS= read -r name; do [ -n "$name" ] && names+=("$name"); done < <(b_list)
+      fi
+      [ "${#names[@]}" -gt 0 ] || die "sync keepass: no hush secrets found in namespace '$NS'"
+
+      selected=()
+      for name in "${names[@]}"; do
+        skip=0
+        [ "$name" = "$db_secret" ] && skip=1
+        if [ "${#excludes[@]}" -gt 0 ]; then
+          for excluded in "${excludes[@]}"; do [ "$name" = "$excluded" ] && skip=1; done
+        fi
+        [ "$skip" -eq 1 ] || selected+=("$name")
+      done
+      if [ "${#selected[@]}" -eq 0 ]; then
+        printf 'hush: no KeePass sync candidates remain after exclusions.\n'
+        exit 0
+      fi
+      names=("${selected[@]}")
+
+      for name in "${names[@]}"; do
+        [ -n "$name" ] || die "sync keepass: secret names cannot be empty"
+        case "$name" in *$'\n'*|*/*) die "sync keepass: secret names cannot contain slash or newline ('$name')" ;; esac
+        b_exists "$name" || die "sync keepass: no secret named '$name' (try: hush list)"
+      done
+
+      if [ "$dry_run" -eq 1 ]; then
+        for name in "${names[@]}"; do
+          printf 'hush: would sync %s -> KeePass %s/%s in %s (values not read).\n' "$name" "$group" "$name" "$database"
+        done
+        exit 0
+      fi
+
+      __db=""
+      b_fetch "$db_secret" __db
+      case "$__db" in *$'\n'*) unset __db; die "sync keepass: database password must be one line" ;; esac
+
+      work_db="$database"; init_tmp=""
+      if [ "$init" -eq 1 ]; then
+        db_dir="$(dirname "$database")"
+        mkdir -p "$db_dir" || { unset __db; die "sync keepass: could not create database directory '$db_dir'"; }
+        init_tmp="${database}.hush-init.$$"
+        [ ! -e "$init_tmp" ] || { unset __db; die "sync keepass: temporary database path already exists"; }
+        if ! printf '%s\n%s\n' "$__db" "$__db" | "$kpxc" db-create -q -p "$init_tmp" >/dev/null 2>&1; then
+          unset __db; die "sync keepass: KeePassXC could not create the database"
+        fi
+        work_db="$init_tmp"
+        if ! printf '%s\n' "$__db" | "$kpxc" mkdir -q "$work_db" "$group" >/dev/null 2>&1; then
+          rm -f "$init_tmp"; unset __db; die "sync keepass: KeePassXC could not create group '$group'"
+        fi
+        existing=""
+      else
+        if ! existing="$(printf '%s\n' "$__db" | "$kpxc" ls -q -f "$work_db" "$group" 2>/dev/null)"; then
+          if ! printf '%s\n' "$__db" | "$kpxc" mkdir -q "$work_db" "$group" >/dev/null 2>&1; then
+            unset __db; die "sync keepass: database password was rejected or group '$group' could not be created"
+          fi
+          existing=""
+        fi
+      fi
+
+      actions=()
+      for name in "${names[@]}"; do
+        matches=0
+        while IFS= read -r found; do [ "$found" = "$name" ] && matches=$((matches + 1)); done <<< "$existing"
+        [ "$matches" -le 1 ] || { [ -n "$init_tmp" ] && rm -f "$init_tmp"; unset __db; die "sync keepass: duplicate entry '$group/$name'"; }
+        if [ "$matches" -eq 1 ]; then actions+=(edit); else actions+=(add); fi
+      done
+
+      i=0
+      for name in "${names[@]}"; do
+        __val=""
+        b_fetch "$name" __val
+        case "$__val" in
+          *$'\n'*) [ -n "$init_tmp" ] && rm -f "$init_tmp"; unset __val __db; die "sync keepass: '$name' is multiline; KeePassXC password prompts accept one line" ;;
+        esac
+        entry="$group/$name"
+        if ! printf '%s\n%s\n' "$__db" "$__val" | "$kpxc" "${actions[$i]}" -q -p "$work_db" "$entry" >/dev/null 2>&1; then
+          [ -n "$init_tmp" ] && rm -f "$init_tmp"
+          unset __val __db
+          die "sync keepass: KeePassXC rejected '$entry'; no value was shown"
+        fi
+        unset __val
+        printf 'hush: synced %s -> KeePass %s (value not shown).\n' "$name" "$entry"
+        i=$((i + 1))
+      done
+
+      if [ -n "$init_tmp" ]; then
+        mv "$init_tmp" "$database" || { rm -f "$init_tmp"; unset __db; die "sync keepass: could not place database at '$database'"; }
+        chmod 600 "$database" 2>/dev/null || true
+        printf 'hush: created KeePass database %s. keep its password somewhere recoverable.\n' "$database"
+      fi
+      unset __db
+    fi
     ;;
   file)
     backend_check
