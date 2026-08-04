@@ -82,7 +82,12 @@ try {
   const configPath = join(root, 'Library', 'Application Support', 'hush', 'keepass-schedule.json');
   const plistPath = join(root, 'Library', 'LaunchAgents', 'com.royashbrook.hush.keepass-sync.plist');
   const config = JSON.parse(readFileSync(configPath, 'utf8'));
+  const mirror = join(root, 'Library', 'Application Support', 'hush', 'keepass-mirror.kdbx');
+  assert.equal(config.version, 2);
   assert.equal(config.database, database);
+  assert.equal(config.mirror, mirror);
+  assert.equal(existsSync(mirror), true);
+  assert.equal(statSync(mirror).mode & 0o777, 0o600);
   assert.equal(config.dbSecret, 'hush-keepass-master-password');
   assert.deepEqual(config.excludes, ['local-only']);
   assert.deepEqual(config.names, ['selected-a']);
@@ -100,7 +105,7 @@ try {
 
   let commands = readFileSync(log, 'utf8');
   assert.match(commands, /hush:set hush-keepass-master-password/);
-  assert.match(commands, /hush:sync keepass --database .*hush\.kdbx --db-secret hush-keepass-master-password --group hush --exclude local-only --init selected-a/);
+  assert.match(commands, /hush:sync keepass --database .*keepass-mirror\.kdbx --db-secret hush-keepass-master-password --group hush --exclude local-only --init selected-a/);
   assert.match(commands, /launchctl:bootstrap gui\/\d+ /);
   assert.ok(!commands.includes('database-password-value'));
   ok('install stores the password, initializes once, then loads launchd');
@@ -109,7 +114,9 @@ try {
   result = invoke(['run']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   commands = readFileSync(log, 'utf8');
-  assert.match(commands, /hush:sync keepass --database .*hush\.kdbx --db-secret hush-keepass-master-password --group hush --exclude local-only selected-a/);
+  assert.match(commands, /hush:sync keepass --database .*keepass-mirror\.kdbx --db-secret hush-keepass-master-password --group hush --exclude local-only selected-a/);
+  assert.ok(!commands.includes(database));
+  assert.equal(existsSync(database), true);
   assert.match(result.stdout, /sync ok/);
   ok('scheduled run upserts without exposing secret material');
 
@@ -123,6 +130,7 @@ try {
   assert.equal(existsSync(plistPath), false);
   assert.equal(existsSync(configPath), true);
   assert.equal(existsSync(database), true);
+  assert.equal(existsSync(mirror), true);
   ok('remove unloads launchd and retains config plus database');
 
   writeFileSync(log, '');
@@ -132,7 +140,7 @@ try {
   assert.match(commands, /hush:sync keepass .* --dry-run/);
   assert.ok(!commands.includes('hush:set'));
   assert.ok(!commands.includes(' --init'));
-  ok('existing database is validated without recreation or another password prompt');
+  ok('existing mirror is validated without reopening iCloud or prompting again');
 
   process.stdout.write('# KeePass schedule tests done. failures: 0\n');
 } finally {
