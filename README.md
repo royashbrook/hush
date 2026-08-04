@@ -69,6 +69,8 @@ printf '%s' "$TOK" | hush set my-vendor-token # ...or pipe it in (scripts/CI), s
 hush set my-vendor-token --gui                # force the dialog (or --tty / --pipe; HUSH_PROMPT= too)
 hush mint app-operator-key                    # generate + store a random one
 hush run TOKEN=my-vendor-token -- some-cmd    # inject into a command, never printed
+hush sync lastpass --dry-run                  # preview a one-way LastPass sync
+hush sync lastpass                            # upsert every name under LastPass group "hush"
 hush list                                     # names only, never values
 ```
 
@@ -82,6 +84,28 @@ Naming: keep the default `hush` namespace and **prefix names by project** (`blam
 genuinely separate store, not per-project. Need to fix an existing name? `hush rename <old> <new>`
 moves the value internally (never re-asked, never printed). Full docs + the portable contract:
 [SKILL.md](SKILL.md).
+
+## sync to LastPass
+
+Install and log into the official LastPass CLI once, then preview and run the sync:
+
+```sh
+brew install lastpass-cli                     # macOS
+lpass login you@example.com
+hush sync lastpass --dry-run                  # names + destinations only, no values fetched
+hush sync lastpass                            # all names -> hush/<name>
+hush sync lastpass --group team/secrets api-key deploy-key
+```
+
+This is an upsert into each LastPass entry's password field. A missing entry is created, a unique
+entry is updated, and duplicate LastPass names fail closed. Values move over stdin, never argv,
+stdout, or a temp file. Each write uses `--sync=now`, so hush reports success only after LastPass has
+synchronized it to the server. Multiline hush values are refused because `lpass` password-field
+edits accept one line and would otherwise truncate them.
+
+The sync runs wherever both hush and the official `lpass` CLI run: macOS, Linux, and Cygwin. The
+official CLI does not currently provide a native PowerShell or Node entry point, so native Windows
+remains limited by that dependency rather than by the hush store backend.
 
 ## not a vault
 

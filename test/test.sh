@@ -121,5 +121,11 @@ else
 fi
 "$HUSH" rm t-empty >/dev/null 2>&1; "$HUSH" rm t-x >/dev/null 2>&1
 
+if bash "$(dirname "${BASH_SOURCE[0]:-$0}")/lastpass-sync.sh"; then
+  ok "isolated LastPass sync suite"
+else
+  bad "isolated LastPass sync suite"
+fi
+
 echo "# done. failures: $fails"
 [ "$fails" -eq 0 ]

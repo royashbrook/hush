@@ -1,7 +1,7 @@
 ---
 name: hush
 description: Use whenever an agent needs to STORE, GENERATE, or USE a secret (API token, key, signing value, password) without ever exposing the plaintext. Replaces the "go set this env var / paste this token into that system" dance with one structured, OS-keychain-backed flow where the value goes straight from source into the consumer and never passes through the agent (no transcript, no logs, no cloud). Two add-paths: a value you GENERATED elsewhere (a vendor token, a PAT) gets pasted in once via a hidden prompt the agent can't see; a value that just needs to be STRONG+RANDOM (an operator key, a webhook signing secret) the agent generates and stores itself. Then it injects straight into the consumer (an env var, or a command's stdin), never printed, so an agent running as the user, with their CLIs already authed, can set server-side secrets and call services without the value ever touching the chat or disk. Triggers: "store this token", "save this key", "add it to the keychain", "generate an operator/signing key", "use the X secret to call Y", or any moment an agent needs a credential to reach a service. macOS, Linux, and Windows backends built in; the never-print contract is portable beyond them.
-version: 1.3.1
+version: 1.4.0
 ---
 
 # hush
@@ -112,6 +112,7 @@ So a secret that doesn't need the human never blocks on the human.
 ```
 hush run NAME=VAR [N2=V2 ...] -- <cmd>   # fetch into env vars, exec <cmd> (value only in the child)
 hush pipe <name> -- <cmd>                # stream the value to <cmd>'s stdin
+hush sync lastpass [name ...]            # upsert selected names, or all names when omitted
 hush list                                # NAMES only, never values
 hush rename <old> <new>                  # move to a new name (value moved INTERNALLY, never re-asked)
 hush rm   <name>                         # delete
@@ -121,6 +122,20 @@ hush rm   <name>                         # delete
 server-side secret (`hush pipe gh-pat -- gh secret set X`, `hush pipe key -- npx wrangler secret put
 X`); **run** a command with the value in its environment to call a service (`hush run TOKEN=t --
 curl ...`). The value lives only in that child process , never on disk, never printed.
+
+For a durable LastPass copy, use the built-in one-way sync after the official `lpass` CLI is logged
+in:
+
+```
+hush sync lastpass --dry-run                  # validate login, list destinations, read no values
+hush sync lastpass                            # all names -> LastPass hush/<name>
+hush sync lastpass --group team/secrets foo   # selected name -> team/secrets/foo
+```
+
+The command edits only the LastPass password field. It creates missing entries, updates unique
+entries, fails on duplicate names, and uses a blocking server sync before reporting success. Values
+travel on stdin and `lpass` output is suppressed. Multiline values are refused rather than silently
+truncated. The official LastPass CLI supports macOS, Linux, and Cygwin, not native PowerShell/Node.
 
 > **Escape hatch, `hush file <name> <path>`.** A few tools can *only* read a credential from a file
 > path (a service-account JSON, a cert, a kubeconfig). For those, and only those, `hush file` writes a
@@ -224,9 +239,9 @@ a sticky note.
 Treat it as an **on-ramp.** Two wins land immediately, even with no `hush exec` in sight: you can
 generate secrets securely from day one, and on an old project with values scattered across `.env`s,
 dashboards, and your head, a few pastes get them (a) centralized and (b) agent-usable from then on.
-For a durable, shareable home, **sync them onward** into a real secret manager, see *extending
-hush* for wiring a 1Password / vault / pass backend. hush gets you consistent; the sync makes it
-permanent.
+For a durable, shareable home, **sync them onward** into a real secret manager. LastPass has a
+built-in one-way sync, and *extending hush* covers other CLIs and store backends. hush gets you
+consistent; the sync makes it permanent.
 
 ## extending hush to the tools you already use
 
@@ -234,8 +249,8 @@ The friction this kills: *"go create this key, then paste it into GitHub / Wrang
 tell me when it's there."* If the agent already has the CLI for that tool, it shouldn't hand that
 back, it should just do it. Two directions:
 
-1. **Push a hush-held secret INTO another tool** (it's already built, via `pipe`). Anything with a
-   CLI that takes the value on stdin is a consumer:
+1. **Push a hush-held secret INTO another tool.** LastPass is built in as `hush sync lastpass`.
+   Anything else with a CLI that takes the value on stdin is already a consumer via `pipe`:
    ```
    hush pipe deploy-token -- gh secret set DEPLOY_TOKEN          # into GitHub Actions
    hush pipe api-key      -- npx wrangler secret put API_KEY     # into a Worker
