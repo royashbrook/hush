@@ -19,21 +19,16 @@ function usage(code = 0) {
   out.write(`hush-lastpass-schedule, recurring hush -> LastPass sync
 
   hush-lastpass-schedule install --every 6h [--group path] [name ...]
-  hush-lastpass-schedule install --auto-login --email you@example.com [options]
   hush-lastpass-schedule run
   hush-lastpass-schedule status
   hush-lastpass-schedule remove
 
 options:
-  --auto-login             opt in to storing the LastPass master password in hush
-  --email <address>        LastPass login email, required with --auto-login
-  --auth-secret <name>     hush name for the login secret (default: hush-lastpass-master-password)
-  --refresh-login-secret   replace an existing stored login secret during install
   --every <Nm|Nh|Nd>       interval, minimum 5m (default: 6h)
   --group <path>           LastPass group (default: hush)
 
-auto-login never uses lpass --plaintext-key. setup performs one interactive trusted-device login.
-if that trust is revoked or expires, scheduled runs fail closed until install/login is run again.
+log in first with LPASS_AGENT_TIMEOUT=0 lpass login --trust <email>. after a reboot or logout,
+scheduled runs fail closed until that interactive login is repeated.
 `);
   process.exit(code);
 }
@@ -94,32 +89,22 @@ function writeAtomic(path, value, mode = 0o600) {
 }
 
 function parseInstall(args) {
-  const result = {
-    every: '6h', group: 'hush', autoLogin: false, email: '',
-    authSecret: 'hush-lastpass-master-password', refresh: false, names: [],
-  };
+  const result = { every: '6h', group: 'hush', names: [] };
   while (args.length) {
     const arg = args.shift();
     if (arg === '--every') result.every = args.shift() || die('--every needs an interval');
     else if (arg === '--group') result.group = args.shift() || die('--group needs a path');
-    else if (arg === '--email') result.email = args.shift() || die('--email needs an address');
-    else if (arg === '--auth-secret') result.authSecret = args.shift() || die('--auth-secret needs a name');
-    else if (arg === '--auto-login') result.autoLogin = true;
-    else if (arg === '--refresh-login-secret') result.refresh = true;
     else if (arg === '--') { result.names.push(...args); break; }
     else if (arg.startsWith('-')) die(`unknown option '${arg}'`);
     else result.names.push(arg);
   }
   if (!result.group || result.group.endsWith('/')) die('--group must be non-empty and cannot end with /');
-  if (result.autoLogin && !result.email) die('--email is required with --auto-login');
-  if (result.refresh && !result.autoLogin) die('--refresh-login-secret requires --auto-login');
   result.seconds = seconds(result.every);
   return result;
 }
 
 function syncArgs(config, dryRun = false) {
   const args = ['sync', 'lastpass', '--group', config.group];
-  if (config.autoLogin) args.push('--exclude', config.authSecret);
   if (dryRun) args.push('--dry-run');
   args.push(...config.names);
   return args;
@@ -140,25 +125,8 @@ function install(args) {
   const lpass = findExecutable('lpass', process.env.HUSH_LASTPASS_SCHEDULE_LPASS);
   const launchctl = findExecutable('launchctl', process.env.HUSH_LASTPASS_SCHEDULE_LAUNCHCTL);
 
-  if (options.autoLogin) {
-    process.stdout.write('hush-lastpass-schedule: auto-login opt-in stores your LastPass master password in the local hush store.\n');
-    const login = run(lpass, ['login', '--trust', options.email], {
-      stdio: 'inherit',
-      env: { ...process.env, LPASS_AGENT_TIMEOUT: '0' },
-    });
-    if (login.status !== 0) die('interactive trusted-device login failed; nothing installed');
-
-    const listed = run(hush, ['list']);
-    const hasSecret = listed.status === 0 && listed.stdout.split(/\r?\n/).includes(options.authSecret);
-    if (!hasSecret || options.refresh) {
-      process.stdout.write(`hush-lastpass-schedule: storing login material as hush secret '${options.authSecret}'.\n`);
-      const stored = run(hush, ['set', options.authSecret], { stdio: 'inherit' });
-      if (stored.status !== 0) die('login secret was not stored; nothing installed');
-    }
-  } else {
-    const status = run(lpass, ['status', '--quiet', '--color=never']);
-    if (status.status !== 0) die('LastPass is not logged in; run lpass login first or use --auto-login');
-  }
+  const status = run(lpass, ['status', '--quiet', '--color=never']);
+  if (status.status !== 0) die('LastPass is not logged in; run LPASS_AGENT_TIMEOUT=0 lpass login --trust <email> first');
 
   const config = {
     version: 1,
@@ -167,9 +135,6 @@ function install(args) {
     names: options.names,
     every: options.every,
     seconds: options.seconds,
-    autoLogin: options.autoLogin,
-    email: options.email,
-    authSecret: options.authSecret,
   };
 
   const preview = run(hush, syncArgs(config, true), { stdio: 'inherit' });
@@ -209,16 +174,7 @@ function install(args) {
 function scheduledRun(configPath) {
   const config = readConfig(configPath);
   if (run(config.lpass, ['status', '--quiet', '--color=never']).status !== 0) {
-    if (!config.autoLogin) die('LastPass is logged out and auto-login is disabled');
-    const env = {
-      ...process.env,
-      LPASS_AGENT_TIMEOUT: '0',
-      LPASS_DISABLE_PINENTRY: '1',
-    };
-    const login = run(config.hush, [
-      'pipe', config.authSecret, '--', config.lpass, 'login', '--trust', config.email,
-    ], { env });
-    if (login.status !== 0) die('automatic LastPass login failed; refresh trusted login interactively');
+    die('LastPass is logged out; run LPASS_AGENT_TIMEOUT=0 lpass login --trust <email> interactively');
   }
 
   const synced = run(config.hush, syncArgs(config));
@@ -231,7 +187,7 @@ function status() {
   const config = readConfig(paths.config);
   const launchctl = findExecutable('launchctl', process.env.HUSH_LASTPASS_SCHEDULE_LAUNCHCTL);
   const result = run(launchctl, ['print', `gui/${process.getuid()}/${LABEL}`]);
-  process.stdout.write(`hush-lastpass-schedule: ${result.status === 0 ? 'loaded' : 'not loaded'}, every ${config.every}, auto-login ${config.autoLogin ? 'enabled' : 'disabled'}\n`);
+  process.stdout.write(`hush-lastpass-schedule: ${result.status === 0 ? 'loaded' : 'not loaded'}, every ${config.every}\n`);
   process.exit(result.status === 0 ? 0 : 1);
 }
 

@@ -12,7 +12,6 @@ const helper = join(repo, 'helpers', 'hush-lastpass-schedule.mjs');
 const root = mkdtempSync(join(tmpdir(), 'hush-lastpass-schedule-'));
 const log = join(root, 'commands.log');
 const lpassState = join(root, 'lpass.logged-in');
-const secretState = join(root, 'hush.auth-stored');
 const launchState = join(root, 'launch.loaded');
 const hush = join(root, 'hush');
 const lpass = join(root, 'lpass');
@@ -27,18 +26,12 @@ script(lpass, `
 printf 'lpass:%s\\n' "$*" >> "$HUSH_TEST_LOG"
 case "\${1:-}" in
   status) [ -f "$HUSH_TEST_LPASS_STATE" ] ;;
-  login) : > "$HUSH_TEST_LPASS_STATE" ;;
   *) exit 41 ;;
 esac`);
 
 script(hush, `
 printf 'hush:%s\\n' "$*" >> "$HUSH_TEST_LOG"
 case "\${1:-}" in
-  list) [ -f "$HUSH_TEST_SECRET_STATE" ] && printf 'hush-lastpass-master-password\\n'; exit 0 ;;
-  set) : > "$HUSH_TEST_SECRET_STATE" ;;
-  pipe)
-    printf 'login-env:%s:%s\\n' "\${LPASS_AGENT_TIMEOUT:-}" "\${LPASS_DISABLE_PINENTRY:-}" >> "$HUSH_TEST_LOG"
-    exit "\${HUSH_TEST_PIPE_RC:-0}" ;;
   sync) exit "\${HUSH_TEST_SYNC_RC:-0}" ;;
   *) exit 42 ;;
 esac`);
@@ -61,7 +54,6 @@ const env = {
   HUSH_LASTPASS_SCHEDULE_LAUNCHCTL: launchctl,
   HUSH_TEST_LOG: log,
   HUSH_TEST_LPASS_STATE: lpassState,
-  HUSH_TEST_SECRET_STATE: secretState,
   HUSH_TEST_LAUNCH_STATE: launchState,
 };
 
@@ -75,19 +67,16 @@ function invoke(args, extraEnv = {}) {
 function ok(label) { process.stdout.write(`ok   - ${label}\n`); }
 
 try {
+  writeFileSync(lpassState, '');
   let result = invoke([
-    'install', '--auto-login', '--email', 'user@example.com', '--every', '6h',
-    '--group', 'team/hush', 'selected-a',
+    'install', '--every', '6h', '--group', 'team/hush', 'selected-a',
   ]);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  ok('auto-login schedule installs');
+  ok('logged-in schedule installs');
 
   const configPath = join(root, 'Library', 'Application Support', 'hush', 'lastpass-schedule.json');
   const plistPath = join(root, 'Library', 'LaunchAgents', 'com.royashbrook.hush.lastpass-sync.plist');
   const config = JSON.parse(readFileSync(configPath, 'utf8'));
-  assert.equal(config.autoLogin, true);
-  assert.equal(config.email, 'user@example.com');
-  assert.equal(config.authSecret, 'hush-lastpass-master-password');
   assert.deepEqual(config.names, ['selected-a']);
   assert.equal(config.seconds, 21600);
   assert.equal(statSync(configPath).mode & 0o777, 0o600);
@@ -97,31 +86,34 @@ try {
   const plist = readFileSync(plistPath, 'utf8');
   assert.match(plist, /<integer>21600<\/integer>/);
   assert.match(plist, /<string>run<\/string>/);
-  assert.ok(!plist.includes('user@example.com'));
-  assert.ok(!plist.includes('hush-lastpass-master-password'));
   ok('LaunchAgent contains only runner and config paths');
 
   let commands = readFileSync(log, 'utf8');
-  assert.match(commands, /lpass:login --trust user@example\.com/);
-  assert.match(commands, /hush:set hush-lastpass-master-password/);
-  assert.match(commands, /hush:sync lastpass --group team\/hush --exclude hush-lastpass-master-password --dry-run selected-a/);
+  assert.match(commands, /lpass:status --quiet --color=never/);
+  assert.match(commands, /hush:sync lastpass --group team\/hush --dry-run selected-a/);
   assert.match(commands, /launchctl:bootstrap gui\/\d+ /);
-  ok('install performs trusted login, stores auth, previews, then loads');
+  ok('install checks login, previews, then loads');
 
   unlinkSync(lpassState);
   writeFileSync(log, '');
   result = invoke(['run']);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /LastPass is logged out/);
+  commands = readFileSync(log, 'utf8');
+  assert.ok(!commands.includes('hush:sync'));
+  ok('logged-out run fails before sync');
+
+  writeFileSync(lpassState, '');
+  writeFileSync(log, '');
+  result = invoke(['run']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   commands = readFileSync(log, 'utf8');
-  assert.match(commands, /hush:pipe hush-lastpass-master-password -- .*lpass login --trust user@example\.com/);
-  assert.match(commands, /login-env:0:1/);
-  assert.match(commands, /hush:sync lastpass --group team\/hush --exclude hush-lastpass-master-password selected-a/);
-  assert.ok(!commands.includes('master-password-value'));
-  ok('logged-out run reauthenticates from hush and excludes auth secret');
+  assert.match(commands, /hush:sync lastpass --group team\/hush selected-a/);
+  ok('logged-in run syncs selected names');
 
   result = invoke(['status']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /loaded, every 6h, auto-login enabled/);
+  assert.match(result.stdout, /loaded, every 6h/);
   ok('status reports loaded schedule');
 
   result = invoke(['remove']);
@@ -132,8 +124,8 @@ try {
 
   result = invoke(['install', '--auto-login', '--every', '6h']);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /--email is required/);
-  ok('auto-login requires explicit email opt-in');
+  assert.match(result.stderr, /unknown option '--auto-login'/);
+  ok('unsupported auto-login is rejected');
 
   process.stdout.write('# LastPass schedule tests done. failures: 0\n');
 } finally {
