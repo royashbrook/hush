@@ -133,6 +133,12 @@ else
   bad "isolated LastPass schedule suite"
 fi
 
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/launchd-calendar.mjs"; then
+  ok "launchd calendar schedule suite"
+else
+  bad "launchd calendar schedule suite"
+fi
+
 if bash "$(dirname "${BASH_SOURCE[0]:-$0}")/keepass-sync.sh"; then
   ok "isolated KeePass sync suite"
 else
