@@ -143,6 +143,11 @@ API](https://developer.lastpass.com/business/docs/index.md) manages accounts, co
 reports, but does not expose vault-item writes. The scheduler is Node so other native schedulers can
 be added without changing the sync contract, but this release installs launchd on macOS only.
 
+All three macOS sync schedulers use local-time calendar slots, so
+[launchd runs a slot missed during sleep when the Mac wakes](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/ScheduledJobs.html).
+`--every` is the maximum cadence; unusual values that do not divide a day or week evenly may run
+slightly early at the boundary, never later.
+
 ## sync to a local KeePass database
 
 [KeePassXC](https://keepassxc.org/) opens the same encrypted KDBX file on macOS, Linux, and Windows.

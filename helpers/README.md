@@ -3,6 +3,10 @@
 Optional extras built ON TOP of the `hush` CLI. Some ship in the npm package and some remain
 repo-only. They may be platform-specific. Use or ignore freely.
 
+The three macOS sync schedulers use local-time launchd calendar slots, so a slot missed while the
+Mac sleeps runs when it wakes. `--every` is the maximum cadence; values that do not divide a day or
+week evenly may run slightly early at that calendar boundary, never later.
+
 ## hush-lastpass-schedule, experimental unattended LastPass sync (macOS)
 
 The npm package installs this Node helper beside `hush`. It creates a per-user launchd job and can

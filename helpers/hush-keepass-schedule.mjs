@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { launchdCalendarXml } from './launchd-calendar.mjs';
 
 const LABEL = 'com.royashbrook.hush.keepass-sync';
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -228,7 +229,8 @@ function install(args) {
     <string>--config</string>
     <string>${xml(paths.config)}</string>
   </array>
-  <key>StartInterval</key><integer>${config.seconds}</integer>
+  <key>StartCalendarInterval</key>
+  ${launchdCalendarXml(config.seconds)}
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>${xml(paths.log)}</string>
   <key>StandardErrorPath</key><string>${xml(paths.log)}</string>

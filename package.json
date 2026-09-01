@@ -14,6 +14,7 @@
     "helpers/hush-bitwarden-schedule.mjs",
     "helpers/hush-lastpass-schedule.mjs",
     "helpers/hush-keepass-schedule.mjs",
+    "helpers/launchd-calendar.mjs",
     "win/hush-backend.ps1",
     "SKILL.md",
     "AGENTS.md"

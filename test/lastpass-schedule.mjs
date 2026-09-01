@@ -95,7 +95,8 @@ try {
   ok('config contains metadata only and is mode 0600');
 
   const plist = readFileSync(plistPath, 'utf8');
-  assert.match(plist, /<integer>21600<\/integer>/);
+  assert.match(plist, /<key>StartCalendarInterval<\/key>/);
+  assert.ok(!plist.includes('<key>StartInterval</key>'));
   assert.match(plist, /<string>run<\/string>/);
   assert.ok(!plist.includes('user@example.com'));
   assert.ok(!plist.includes('hush-lastpass-master-password'));
