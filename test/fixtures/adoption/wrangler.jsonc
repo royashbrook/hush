@@ -1,0 +1,4 @@
+{
+  "name": "adoption-fixture",
+  "vars": { "MODE": "development" }
+}

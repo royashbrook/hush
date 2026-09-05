@@ -163,5 +163,11 @@ else
   bad "isolated Bitwarden schedule suite"
 fi
 
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/adoption.mjs"; then
+  ok "cold adoption suite"
+else
+  bad "cold adoption suite"
+fi
+
 echo "# done. failures: $fails"
 [ "$fails" -eq 0 ]

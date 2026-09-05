@@ -1,0 +1,2 @@
+# synthetic fixture, never a production credential
+EXISTING_TOKEN=fixture-existing-only
