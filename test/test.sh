@@ -141,7 +141,7 @@ else
   bad "isolated LastPass sync suite"
 fi
 
-if node "$(dirname "${BASH_SOURCE[0]:-$0}")/lastpass-schedule.mjs"; then
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/schedule-platform.mjs" lastpass; then
   ok "isolated LastPass schedule suite"
 else
   bad "isolated LastPass schedule suite"
@@ -159,7 +159,7 @@ else
   bad "isolated KeePass sync suite"
 fi
 
-if node "$(dirname "${BASH_SOURCE[0]:-$0}")/keepass-schedule.mjs"; then
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/schedule-platform.mjs" keepass; then
   ok "isolated KeePass schedule suite"
 else
   bad "isolated KeePass schedule suite"
@@ -171,13 +171,13 @@ else
   bad "isolated Bitwarden sync suite"
 fi
 
-if node "$(dirname "${BASH_SOURCE[0]:-$0}")/bitwarden-schedule.mjs"; then
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/schedule-platform.mjs" bitwarden; then
   ok "isolated Bitwarden schedule suite"
 else
   bad "isolated Bitwarden schedule suite"
 fi
 
-if node "$(dirname "${BASH_SOURCE[0]:-$0}")/backup-schedule.mjs"; then
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/schedule-platform.mjs" backup; then
   ok "encrypted backup schedule suite"
 else
   bad "encrypted backup schedule suite"

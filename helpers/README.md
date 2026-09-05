@@ -139,3 +139,11 @@ and no hush. The backup file is plain `gpg --symmetric` AES256, so any gpg on an
 
 macOS (the dialog + Keychain + iCloud path), `gpg` (`brew install gnupg`), and hush on PATH. The
 recovery runbook needs only `gpg` + `base64`, so a backup made here restores anywhere.
+
+### verification scope
+
+The manual CI matrix exercises core storage, sync logic and cold adoption on macOS, Linux and
+Windows. Launchd fixture suites run on macOS/Linux with POSIX fake executables; Windows instead
+verifies each real scheduler refuses installation with its documented macOS-only error. This is
+not Windows scheduling support. `node test/backup-live.mjs` is an opt-in real macOS integration
+check using only a disposable namespace, synthetic values and a uniquely labelled launchd job.
