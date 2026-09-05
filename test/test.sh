@@ -91,14 +91,28 @@ env HUSH_PROMPT=bogus "$HUSH" set t-x >/dev/null 2>&1 && bad "bad HUSH_PROMPT ac
 
 # On mac the GUI branch is always reachable (osascript exists), so a bare fall-through would hit the
 # REAL dialog and block/vary by session. Stub osascript on PATH to simulate a no-GUI session (the
-# reported XPC failure) so the fall-through + honest-error paths are deterministic. Non-mac CI has no
-# GUI dialog backend, so the fall-through naturally lands on the final die.
+# reported XPC failure) so the fall-through + honest-error paths are deterministic. Windows has a
+# real WPF dialog too: intercept only its prompt verb, retaining real DPAPI for every other call.
 STUB=""
 if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
   STUB="$(mktemp -d 2>/dev/null || echo "${TMPDIR:-/tmp}/hush-stub-$$")"; mkdir -p "$STUB"
   printf '#!/bin/sh\necho "execution error: Connection Invalid error for service com.apple.hiservices-xpcservice. (-1)" >&2\nexit 1\n' > "$STUB/osascript"
   chmod +x "$STUB/osascript"
 fi
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*|Windows_NT)
+    STUB="$(mktemp -d)"
+    export HUSH_TEST_REAL_POWERSHELL="$(command -v powershell.exe)"
+    cat > "$STUB/powershell.exe" <<'EOF'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [ "$arg" = prompt ] && { echo 'synthetic GUI unavailable' >&2; exit 1; }
+done
+exec "$HUSH_TEST_REAL_POWERSHELL" "$@"
+EOF
+    chmod +x "$STUB/powershell.exe"
+    ;;
+esac
 run_prompt() { # run hush set with the stub PATH (mac) or bare (else), HUSH_PROMPT cleared
   if [ -n "$STUB" ]; then env -u HUSH_PROMPT PATH="$STUB:$PATH" "$HUSH" "$@"; else env -u HUSH_PROMPT "$HUSH" "$@"; fi
 }
@@ -115,10 +129,10 @@ if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
   out2="$(run_prompt set t-x --gui < /dev/null 2>&1)"
   printf '%s' "$out2" | grep -qi "could not open" && ok "--gui failure honest" || bad "--gui failure not surfaced (got: $out2)"
   "$HUSH" list 2>&1 | grep -qx "t-x" && bad "stored despite dialog failure" || ok "nothing stored on dialog failure"
-  rm -rf "$STUB" 2>/dev/null
 else
   ok "osascript-failure checks (mac-only, skipped on $(uname -s 2>/dev/null))"
 fi
+[ -z "$STUB" ] || rm -rf "$STUB" 2>/dev/null
 "$HUSH" rm t-empty >/dev/null 2>&1; "$HUSH" rm t-x >/dev/null 2>&1
 
 if bash "$(dirname "${BASH_SOURCE[0]:-$0}")/lastpass-sync.sh"; then
