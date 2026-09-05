@@ -67,6 +67,9 @@ const files = () => fs.existsSync(dest) ? fs.readdirSync(dest).filter((name) => 
 try {
   schedule(['--help']);
   backup(['--help']);
+  backup(['--auto', 'unexpected'], 1);
+  backup(['--dry-run', 'unexpected'], 1);
+  backup(['--restore'], 1);
   schedule(['install'], 1); // Missing iCloud must not be invented by mkdir.
   assert.ok(!fs.existsSync(config));
   backup(['--dry-run']);

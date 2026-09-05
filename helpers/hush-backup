@@ -122,9 +122,9 @@ encrypt() {
 
 mode="backup"; infile=""
 case "${1:-}" in
-  --auto)    mode="auto" ;;
-  --dry-run) mode="dry-run" ;;
-  --restore) mode="restore"; infile="${2:-}" ;;
+  --auto)    [ "$#" -eq 1 ] || die 'usage: hush-backup --auto'; mode="auto" ;;
+  --dry-run) [ "$#" -eq 1 ] || die 'usage: hush-backup --dry-run'; mode="dry-run" ;;
+  --restore) [ "$#" -eq 2 ] || die 'usage: hush-backup --restore <file.gpg>'; mode="restore"; infile="$2" ;;
   --help|-h) sed -n '2,40p' "$0"; exit 0 ;;
   "") ;;
   *) die "unknown arg: $1  (no args = interactive backup; --auto; --restore <file>)" ;;
@@ -164,7 +164,7 @@ case "$mode" in
   restore)
     [ -n "$infile" ] || die "usage: hush-backup --restore <file.gpg>"
     [ -f "$infile" ] || die "no such file: $infile"
-    pass="$(ask_pass "Passphrase / hush-backup-key to RESTORE from $(basename "$infile").")"
+    pass="$(ask_pass "Passphrase / hush-backup-key to RESTORE this backup.")"
     [ -n "$pass" ] || die "no passphrase entered (cancelled)"
     bundle="$("$GPG_BIN" "${GPG_DEC[@]}" "$infile" 3<<<"$pass" 2>/dev/null)" \
       || die "decryption failed (wrong key or corrupt file)"
