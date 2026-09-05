@@ -199,7 +199,8 @@ be retired deliberately before installing the new job.
 See [backup options](helpers/README.md#schedule-it-macos) and the packaged
 [recovery runbook](helpers/RESTORE-hush-backup.md). Recovery needs the separately saved key;
 an encrypted backup cannot recover its own key. Scheduling and interactive dialogs are macOS
-only; unattended Bash/GPG backups support an explicit alternate directory on other hosts.
+only. The unattended Bash/GPG path targets POSIX hosts with an explicit alternate directory;
+Windows backup-helper execution is not yet verified.
 
 ### schedule KeePass into iCloud (macOS)
 
