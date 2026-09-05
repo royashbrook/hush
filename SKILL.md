@@ -2,10 +2,16 @@
 name: hush
 description: "Use whenever an agent needs to STORE, GENERATE, or USE a secret such as an API token, signing key, or password. Hush has one hard rule: the agent never sees plaintext, so it never enters chat, transcripts, stdout, logs, the clipboard, or a temp file. A user-provided value enters once through a hidden prompt; a strong random value can be generated directly into the OS-backed store. Hush later injects it straight into a consumer through an environment variable or stdin, never prints it, and deliberately has no plaintext get command. Trigger on \"store this token\", \"save this key\", \"add it to the keychain\", \"generate an operator/signing key\", \"use the X secret to call Y\", or whenever an agent needs a credential to reach a service. macOS, Linux, and Windows backends are built in; the never-print contract is portable beyond them."
 metadata:
-  version: 1.4.0
+  version: 1.5.0
 ---
 
 # hush
+
+Optional encrypted backup: npm includes `hush-backup` and `hush-backup-schedule`. The scheduler
+uses macOS launchd, defaults to iCloud Drive, and is opt-in. Follow the README's encrypted-backup
+section: first ensure a backup key exists and the human keeps a separate recovery copy. Never
+read the key into agent context. `--dry-run` checks names and prerequisites without reading values.
+Do not replace a legacy schedule silently; remove only the old job after confirming migration.
 
 A secret store for AI agents, with **one hard rule: the agent never sees the plaintext.**
 
