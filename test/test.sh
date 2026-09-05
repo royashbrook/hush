@@ -163,6 +163,12 @@ else
   bad "isolated Bitwarden schedule suite"
 fi
 
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/backup-schedule.mjs"; then
+  ok "encrypted backup schedule suite"
+else
+  bad "encrypted backup schedule suite"
+fi
+
 if node "$(dirname "${BASH_SOURCE[0]:-$0}")/adoption.mjs"; then
   ok "cold adoption suite"
 else

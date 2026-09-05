@@ -106,10 +106,29 @@ hush-backup --help
 Env knobs: `HUSH_BACKUP_DIR` (dest, default iCloud Drive/hush-backups), `HUSH_BACKUP_KEY` (key name,
 default `hush-backup-key`), `HUSH_BACKUP_KEEP` (retention, default 30).
 
-### schedule it (daily, macOS)
+### schedule it (macOS)
 
-See `com.hush-backup.plist`, customize the script path, copy to `~/Library/LaunchAgents/`, and load it
-(instructions in the plist header).
+The npm package includes both commands; no clone or hand-edited plist is needed:
+
+```sh
+hush-backup --dry-run
+hush-backup-schedule install --every 6h --keep 30
+hush-backup-schedule status
+hush-backup-schedule run
+hush-backup-schedule remove
+```
+
+Install validates the existing iCloud Drive directory, absolute executable paths, key name, and
+a value-free dry-run. Use `--directory PATH` for an explicit alternate destination. Scheduled
+runs write dated start/success/failure lines to `~/Library/Logs/hush-backup.log`, never values.
+The first run happens on load; subsequent runs use equal local-time calendar slots. macOS may
+require consent for background access to iCloud Drive. Verify a completed backup in the log;
+`status` proves job registration, not a successful backup or remote iCloud upload.
+
+`remove` keeps the config, keys, and snapshots. Reinstall refreshes the absolute paths after an
+npm/Node relocation. The legacy `com.hush-backup.plist` remains supported for existing users:
+installation refuses to create a duplicate while that plist or job exists. Deliberately unload
+and retire the old job before migrating; do not delete its key or backup directory.
 
 ### restore / disaster recovery
 

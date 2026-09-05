@@ -175,7 +175,33 @@ on argv, stdout, logs, or a temp plaintext file. The database-password secret is
 Missing entries are created, unique entries are updated, duplicate names fail closed, and multiline
 values are refused rather than truncated.
 
-### schedule it into iCloud (macOS)
+### encrypted snapshots into iCloud (macOS, opt-in)
+
+For whole-store encrypted snapshots instead of a password-manager mirror, npm also ships
+`hush-backup` and `hush-backup-schedule`. Requires GnuPG (`brew install gnupg`).
+
+```sh
+npm install -g @royashbrook/hush
+hush mint hush-backup-key  # only if absent; never overwrite an existing recovery key
+# keep a recovery copy outside this machine's Keychain before proceeding
+hush-backup --dry-run
+hush-backup-schedule install --every 6h --keep 30
+hush-backup-schedule status
+```
+
+Values stream into GPG; only ciphertext snapshots are written. The key is passed on a private
+file descriptor, not in arguments or logs. `run` performs one backup; `remove` stops the schedule
+without removing keys, config, or backups. A loaded job is not proof of backup success: check
+the dated log at `~/Library/Logs/hush-backup.log` and a completed `.gpg` snapshot. iCloud upload
+is handled by macOS, not verified by this tool. Existing manual `com.hush-backup` schedules must
+be retired deliberately before installing the new job.
+
+See [backup options](helpers/README.md#schedule-it-macos) and the packaged
+[recovery runbook](helpers/RESTORE-hush-backup.md). Recovery needs the separately saved key;
+an encrypted backup cannot recover its own key. Scheduling and interactive dialogs are macOS
+only; unattended Bash/GPG backups support an explicit alternate directory on other hosts.
+
+### schedule KeePass into iCloud (macOS)
 
 The npm package includes a Node/launchd helper. A cold setup creates the database if absent, asks for
 its password through hush when needed, performs the first sync, and loads the recurring job:
