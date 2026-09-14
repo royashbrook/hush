@@ -1,9 +1,10 @@
 {
   "name": "@royashbrook/hush",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "a secret store for AI agents with one rule: the agent never sees the plaintext. get a secret once into the OS keychain, then inject it into commands forever. no get, cross-platform, MIT.",
   "bin": {
     "hush": "hush",
+    "hush-maintenance": "helpers/hush-maintenance.mjs",
     "hush-backup": "helpers/hush-backup",
     "hush-backup-schedule": "helpers/hush-backup-schedule.mjs",
     "hush-bitwarden-schedule": "helpers/hush-bitwarden-schedule.mjs",
@@ -21,6 +22,9 @@
     "helpers/hush-lastpass-schedule.mjs",
     "helpers/hush-keepass-schedule.mjs",
     "helpers/launchd-calendar.mjs",
+    "helpers/schedule-health.mjs",
+    "helpers/hush-maintenance.mjs",
+    "helpers/MAINTENANCE.md",
     "win/hush-backend.ps1",
     "SKILL.md",
     "AGENTS.md"

@@ -189,5 +189,10 @@ else
   bad "cold adoption suite"
 fi
 
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/maintenance.mjs"; then
+  ok "maintenance checks, notifications and repair"
+else
+  bad "maintenance checks, notifications and repair"
+fi
 echo "# done. failures: $fails"
 [ "$fails" -eq 0 ]

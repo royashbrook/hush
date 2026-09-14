@@ -26,7 +26,15 @@ unset BASH_XTRACEFD 2>/dev/null || true
 set -uo pipefail
 
 NS="${HUSH_NS:-hush}"
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+SOURCE="${BASH_SOURCE[0]:-$0}"
+INVOKED="$SOURCE"
+while [ -L "$SOURCE" ]; do
+  SOURCE_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in /*) ;; *) SOURCE="$SOURCE_DIR/$SOURCE" ;; esac
+done
+HERE="$(cd "$(dirname "$SOURCE")" && pwd)"
+HUSH_VERSION=1.6.0
 
 die() { printf 'hush: %s\n' "$1" >&2; exit 1; }
 
@@ -215,6 +223,9 @@ hush — a secret store for AI agents. values are never printed.
                                    move a secret to a new name (e.g. to add a project prefix). value
                                    is moved INTERNALLY, never re-asked from the human, never printed.
   hush rm   <name>                 delete a secret
+  hush --version                   local CLI version, no backend or network access
+  hush doctor [--check-updates]     offline health by default; explicit public version check
+  hush maintenance --help           opt-in notices and explicit scheduler repair (Node 18+)
 
 Rule: a value is never sent to stdout. There is no `get`. Namespace via HUSH_NS (default hush).
 If a HUMAN needs to read a value, they do it themselves (the agent never prints it):
@@ -227,6 +238,16 @@ EOF
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
+  --version|version)
+    [ "$#" -eq 0 ] || die 'version takes no arguments'
+    printf '%s\n' "$HUSH_VERSION"
+    ;;
+  doctor|maintenance)
+    command -v node >/dev/null 2>&1 || die 'maintenance needs Node 18 or newer'
+    export HUSH_INVOKED_PATH="$INVOKED"
+    if [ "$cmd" = doctor ]; then set -- doctor "$@"; fi
+    exec node "$HERE/helpers/hush-maintenance.mjs" "$@"
+    ;;
   set)
     backend_check
     name=""

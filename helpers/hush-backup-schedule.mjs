@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { launchdCalendarXml } from './launchd-calendar.mjs';
+import { stableNode, scheduleStatus } from './schedule-health.mjs';
 
 const script = fileURLToPath(import.meta.url);
 const helper = path.join(path.dirname(script), 'hush-backup');
@@ -82,7 +83,7 @@ function install(args) {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>${xml(label)}</string>
-<key>ProgramArguments</key><array>${[process.execPath, script, 'run', '--config', configFile].map((arg) => `<string>${xml(arg)}</string>`).join('')}</array>
+<key>ProgramArguments</key><array>${[stableNode(), script, 'run', '--config', configFile].map((arg) => `<string>${xml(arg)}</string>`).join('')}</array>
 <key>StartCalendarInterval</key>${launchdCalendarXml(seconds)}
 <key>RunAtLoad</key><true/>
 <key>StandardOutPath</key><string>${xml(logFile)}</string>
@@ -116,9 +117,7 @@ function run(file) {
 }
 function status() {
   macOnly();
-  const loaded = call(launchctl(), ['print', target]).status === 0;
-  log(`${loaded ? 'loaded' : 'not loaded'}; config: ${configFile}; log: ${logFile}`);
-  process.exitCode = loaded ? 0 : 1;
+  process.exitCode = scheduleStatus({ kind: 'backup', label, plistFile, configFile, logFile, ctl: launchctl() });
 }
 function remove() {
   macOnly();
