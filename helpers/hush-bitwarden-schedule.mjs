@@ -6,6 +6,7 @@ import { basename, delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { launchdCalendarXml } from './launchd-calendar.mjs';
+import { stableNode, scheduleStatus } from './schedule-health.mjs';
 
 const LABEL = 'com.royashbrook.hush.bitwarden-sync';
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -244,7 +245,7 @@ function install(args) {
   <key>Label</key><string>${LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${xml(process.execPath)}</string>
+    <string>${xml(stableNode())}</string>
     <string>${xml(SCRIPT)}</string>
     <string>run</string>
     <string>--config</string>
@@ -275,11 +276,11 @@ function scheduledRun(configPath) {
 
 function status() {
   const paths = roots();
-  const config = readConfig(paths.config);
   const launchctl = findExecutable('launchctl', process.env.HUSH_BITWARDEN_SCHEDULE_LAUNCHCTL);
-  const result = run(launchctl, ['print', `gui/${process.getuid()}/${LABEL}`]);
-  process.stdout.write(`hush-bitwarden-schedule: ${result.status === 0 ? 'loaded' : 'not loaded'}, every ${config.every}, folder ${config.folder}\n`);
-  process.exit(result.status === 0 ? 0 : 1);
+  process.exitCode = scheduleStatus({
+    kind: 'bitwarden', label: LABEL, plistFile: paths.plist,
+    configFile: paths.config, logFile: paths.log, ctl: launchctl,
+  });
 }
 
 function remove() {

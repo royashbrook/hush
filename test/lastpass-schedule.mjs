@@ -122,7 +122,7 @@ try {
 
   result = invoke(['status']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /loaded, every 6h, auto-login enabled/);
+  assert.equal(JSON.parse(result.stdout).state, "unverified");
   ok('status reports loaded schedule');
 
   result = invoke(['remove']);

@@ -61,6 +61,13 @@ Backends: macOS Keychain, Linux libsecret (`secret-tool`), and Windows DPAPI (vi
 built in. On other platforms keep the same contract with your OS secret store (see [SKILL.md](SKILL.md)).
 Cross-OS tested in CI (manual `workflow_dispatch`, all three runners).
 
+## maintenance (opt-in)
+
+`hush doctor` checks local installation drift and backup health without opening the secret store.
+`hush doctor --check-updates` explicitly checks the public npm version. daily notices,
+agent-readable status, and reversible scheduler repair are covered in
+[maintenance without surprises](helpers/MAINTENANCE.md). nothing auto-upgrades.
+
 ## quick start
 
 ```sh

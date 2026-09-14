@@ -3,6 +3,9 @@
 Optional extras built ON TOP of the `hush` CLI. Some ship in the npm package and some remain
 repo-only. They may be platform-specific. Use or ignore freely.
 
+For `hush doctor`, opt-in update notifications and explicit scheduler repair, read
+[maintenance without surprises](MAINTENANCE.md). no automatic upgrades or secret access.
+
 The three macOS sync schedulers use local-time launchd calendar slots, so a slot missed while the
 Mac sleeps runs when it wakes. `--every` is the maximum cadence; values that do not divide a day or
 week evenly may run slightly early at that calendar boundary, never later.
@@ -123,10 +126,12 @@ a value-free dry-run. Use `--directory PATH` for an explicit alternate destinati
 runs write dated start/success/failure lines to `~/Library/Logs/hush-backup.log`, never values.
 The first run happens on load; subsequent runs use equal local-time calendar slots. macOS may
 require consent for background access to iCloud Drive. Verify a completed backup in the log;
-`status` proves job registration, not a successful backup or remote iCloud upload.
+`status` reports registration, prerequisites and bounded success-log evidence. it does not prove
+a restore or remote iCloud upload. missing evidence is `unverified`, not success.
 
-`remove` keeps the config, keys, and snapshots. Reinstall refreshes the absolute paths after an
-npm/Node relocation. The legacy `com.hush-backup.plist` remains supported for existing users:
+`remove` keeps the config, keys, and snapshots. Prefer the explicit maintenance repair preview
+after an npm/Node relocation, rather than reinstalling with default config. The legacy
+`com.hush-backup.plist` remains supported for existing users:
 installation refuses to create a duplicate while that plist or job exists. Deliberately unload
 and retire the old job before migrating; do not delete its key or backup directory.
 
