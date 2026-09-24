@@ -44,8 +44,22 @@ case "$(uname -s 2>/dev/null)" in
   MINGW*|MSYS*|CYGWIN*|Windows_NT) BACKEND=windows ;;
   *) BACKEND=unknown ;;
 esac
+if [ "${HUSH_BACKEND:-}" = file ]; then BACKEND=file; fi
+HUSH_FILE="${HUSH_FILE:-$HOME/.secrets}"
 
 svc() { printf '%s:%s' "$NS" "$1"; }
+
+# Local read-only bridge for an existing shell secrets file. Source only in a
+# command substitution, so the selected value is the only one exported to the
+# Hush process; the child command receives only explicitly requested names.
+file_fetch() {
+  local name="$1"
+  case "$name" in ''|[!A-Za-z_]*|*[!A-Za-z0-9_]*) return 1 ;; esac
+  set -a
+  . "$HUSH_FILE" >/dev/null 2>&1 || return 1
+  [ "${!name+x}" ] || return 1
+  printf '%s' "${!name}"
+}
 
 # locate the windows backend + translate the path for powershell if needed
 ps_backend() {
@@ -59,6 +73,7 @@ winps() { HUSH_NS="$NS" powershell.exe -NoProfile -NonInteractive -ExecutionPoli
 backend_check() {
   case "$BACKEND" in
     mac)     command -v security    >/dev/null 2>&1 || die "the macOS 'security' CLI is required." ;;
+    file)    [ -r "$HUSH_FILE" ] || die "secrets file is not readable: $HUSH_FILE" ;;
     linux)   command -v secret-tool >/dev/null 2>&1 || die "secret-tool (libsecret) required: apt install libsecret-tools / dnf install libsecret." ;;
     windows) command -v powershell.exe >/dev/null 2>&1 || die "powershell.exe required for the windows backend." ;;
     *)       die "no built-in backend for this platform ($(uname -s 2>/dev/null)). Keep the contract (never print, inject-only, no getter) with your OS secret store. (see SKILL.md)" ;;
@@ -68,6 +83,8 @@ backend_check() {
 b_exists() {
   case "$BACKEND" in
     mac)     security find-generic-password -s "$(svc "$1")" >/dev/null 2>&1 ;;
+    file)    case "$1" in ''|[!A-Za-z_]*|*[!A-Za-z0-9_]*) return 1 ;; esac
+             grep -Eq "^[[:space:]]*(export[[:space:]]+)?$1=" "$HUSH_FILE" ;;
     linux)   [ -n "$(secret-tool lookup hush "$NS" name "$1" 2>/dev/null)" ] ;;
     windows) winps exists "$1" >/dev/null 2>&1 ;;
   esac
@@ -77,6 +94,7 @@ b_exists() {
 b_store() {
   local name="$1" value="$2"
   case "$BACKEND" in
+    file)    die "the file backend is read-only; add or change values in $HUSH_FILE" ;;
     mac)
       # A bare trailing -w makes security prompt on stdin, keeping ordinary values out of argv.
       # Its prompt protocol is line-oriented, so preserve the legacy argv path for multiline data.
@@ -99,6 +117,7 @@ b_fetch() {
   b_exists "$name" || die "no secret named '$name' (try: hush list)"
   case "$BACKEND" in
     mac)     __v="$(security find-generic-password -s "$(svc "$name")" -w 2>/dev/null)" || die "keychain read failed for '$name'" ;;
+    file)    __v="$(file_fetch "$name")" || die "secrets file read failed for '$name'" ;;
     linux)   __v="$(secret-tool lookup hush "$NS" name "$name" 2>/dev/null)" || die "secret-tool read failed for '$name'" ;;
     windows) __v="$(winps get "$name" 2>/dev/null)" || die "windows read failed for '$name'" ;;
   esac
@@ -107,6 +126,7 @@ b_fetch() {
 
 b_delete() {
   case "$BACKEND" in
+    file)    die "the file backend is read-only; remove values from $HUSH_FILE" ;;
     mac)     security delete-generic-password -s "$(svc "$1")" >/dev/null 2>&1 ;;
     linux)   secret-tool clear hush "$NS" name "$1" >/dev/null 2>&1 ;;
     windows) winps delete "$1" >/dev/null 2>&1 ;;
@@ -116,6 +136,7 @@ b_delete() {
 # enumerate NAMES from the store (never values). source of truth, no separate index.
 b_list() {
   case "$BACKEND" in
+    file)    sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$HUSH_FILE" | sort -u ;;
     mac)     security dump-keychain 2>/dev/null | sed -n "s/.*\"svce\"<blob>=\"$NS:\(.*\)\"\$/\1/p" | sort -u ;;
     linux)   secret-tool search --all hush "$NS" 2>&1 | sed -n 's/^attribute\.name = //p' | sort -u ;;
     windows) winps list 2>/dev/null | sort -u ;;
@@ -250,6 +271,7 @@ case "$cmd" in
     ;;
   set)
     backend_check
+    [ "$BACKEND" != file ] || die "the file backend is read-only; add or change values in $HUSH_FILE"
     name=""
     for a in "$@"; do
       case "$a" in
