@@ -34,7 +34,7 @@ while [ -L "$SOURCE" ]; do
   case "$SOURCE" in /*) ;; *) SOURCE="$SOURCE_DIR/$SOURCE" ;; esac
 done
 HERE="$(cd "$(dirname "$SOURCE")" && pwd)"
-HUSH_VERSION=1.6.0
+HUSH_VERSION=1.6.1
 
 die() { printf 'hush: %s\n' "$1" >&2; exit 1; }
 
@@ -78,13 +78,34 @@ b_store() {
   local name="$1" value="$2"
   case "$BACKEND" in
     mac)
-      # A bare trailing -w makes security prompt on stdin, keeping ordinary values out of argv.
-      # Its prompt protocol is line-oriented, so preserve the legacy argv path for multiline data.
+      # Single-line values go through `security -i`, which reads the whole command from stdin, so the
+      # value stays out of argv. The older path (a bare trailing -w, answering security's password
+      # prompt on stdin) silently kept only the first 128 bytes of a longer value. `security -i` has
+      # its own limit, a 4096-byte command line, so a longer single-line value, like multiline data,
+      # takes the argv path. Every single-line store is read back and must match exactly.
       case "$value" in
-        *$'\n'*) security add-generic-password -U -a "$name" -s "$(svc "$name")" -w "$value" >/dev/null 2>&1 ;;
-        *)       printf '%s\n%s\n' "$value" "$value" \
-                   | security add-generic-password -U -a "$name" -s "$(svc "$name")" -w >/dev/null 2>&1 ;;
-      esac || die "keychain store failed for '$name'"
+        *$'\n'*) security add-generic-password -U -a "$name" -s "$(svc "$name")" -w "$value" >/dev/null 2>&1 \
+                   || die "keychain store failed for '$name'" ;;
+        *)
+          local q="${value//\\/\\\\}" qn="${name//\\/\\\\}" qs; q="${q//\"/\\\"}"; qn="${qn//\"/\\\"}"
+          qs="$(svc "$name")"; qs="${qs//\\/\\\\}"; qs="${qs//\"/\\\"}"
+          local cmd="add-generic-password -U -a \"$qn\" -s \"$qs\" -w \"$q\""
+          if [ "${#cmd}" -lt 4000 ]; then
+            printf '%s\n' "$cmd" | security -i >/dev/null 2>&1
+          else
+            security add-generic-password -U -a "$name" -s "$(svc "$name")" -w "$value" >/dev/null 2>&1
+          fi
+          unset q cmd
+          local back; back="$(security find-generic-password -s "$(svc "$name")" -w 2>/dev/null)" \
+            || die "keychain store failed for '$name'"
+          if [ "$back" != "$value" ]; then
+            unset back
+            b_delete "$name"
+            die "keychain did not keep '$name' intact (it read back different from what was stored), so it was removed rather than left wrong. nothing is stored under that name now."
+          fi
+          unset back
+          ;;
+      esac
       ;;
     linux)   printf '%s' "$value" | secret-tool store --label="$(svc "$name")" hush "$NS" name "$name" >/dev/null 2>&1 \
                || die "secret-tool store failed for '$name'" ;;

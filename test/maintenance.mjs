@@ -41,7 +41,7 @@ try {
   });
   test('version, manifest and skill metadata agree', () => {
     const info = installation(repo);
-    assert.equal(info.version, '1.6.0'); assert.equal(info.mismatch, false);
+    assert.equal(info.version, '1.6.1'); assert.equal(info.mismatch, false);
   });
   test('offline doctor needs no store or registry, unsupported schedulers explicit', () => {
     const report = doctor({ home, platform: 'win32' });
@@ -137,7 +137,7 @@ try {
     });
     test('npm-style symlink invocation finds helpers with no backend', () => {
       const link = path.join(tmp,'hush'); fs.symlinkSync(path.join(repo,'hush'),link);
-      const r = spawnSync('bash',[link,'--version'],{encoding:'utf8'}); assert.equal(r.status,0); assert.equal(r.stdout.trim(),'1.6.0');
+      const r = spawnSync('bash',[link,'--version'],{encoding:'utf8'}); assert.equal(r.status,0); assert.equal(r.stdout.trim(),'1.6.1');
       const doc = spawnSync('bash',[link,'maintenance','--help'],{encoding:'utf8'}); assert.equal(doc.status,0); assert.match(doc.stdout,/No upgrade is automatic/);
       const helperLink = path.join(tmp,'hush-maintenance'); fs.symlinkSync(path.join(repo,'helpers/hush-maintenance.mjs'),helperLink);
       const helperResult = spawnSync(process.execPath,[helperLink,'--help'],{encoding:'utf8'});
