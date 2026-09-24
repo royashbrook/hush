@@ -43,6 +43,22 @@ got="$("$HUSH" run V=t-set -- sh -c 'printf "%s" "$V"' 2>/dev/null)"
 got="$("$HUSH" pipe t-set -- cat 2>/dev/null)"
 [ "$got" = "$SENTINEL" ] && ok "pipe to stdin" || bad "pipe value mismatch"
 
+# 4b. long and awkward single-line values round-trip exactly. the macOS password-prompt path used to
+# keep only the first 128 bytes and still report success; 5000 is past `security -i`'s 4096-byte line.
+for n in 129 1000 5000; do
+  long="$(printf "L${n}-%0${n}d" 0 | cut -c1-"$n")"
+  printf '%s' "$long" | "$HUSH" set t-long >/dev/null 2>&1
+  got="$("$HUSH" pipe t-long -- cat 2>/dev/null)"
+  [ "$got" = "$long" ] && ok "long value round-trips ($n bytes)" || bad "long value cut or changed ($n bytes in, ${#got} out)"
+done
+# (no tab: macOS returns a value holding control characters as hex, a separate known limit that the
+# store's read-back check now refuses loudly instead of storing a value that reads back wrong)
+odd='q"uote b\ack s'"'"'ingle $dollar `tick` ;semi|pipe&amp  end'"$(printf '%0150d' 0)"
+printf '%s' "$odd" | "$HUSH" set t-long >/dev/null 2>&1
+got="$("$HUSH" pipe t-long -- cat 2>/dev/null)"
+[ "$got" = "$odd" ] && ok "awkward characters round-trip" || bad "awkward characters changed"
+"$HUSH" rm t-long >/dev/null 2>&1
+
 # 5. file writes the value (skip perms-number check, varies by OS)
 "$HUSH" file t-set "$tmpf" >/dev/null 2>&1 && [ "$(cat "$tmpf")" = "$SENTINEL" ] && ok "file write" || bad "file write"
 
