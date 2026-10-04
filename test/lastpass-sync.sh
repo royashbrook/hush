@@ -26,6 +26,19 @@ printf '%s\n' '#!/bin/sh' \
 
 printf '%s\n' '#!/usr/bin/env bash' \
   'set -u' \
+  'from_stdin=0' \
+  'if [ "${1:-}" = -i ]; then' \
+  '  IFS= read -r line || true; from_stdin=1; args=(); tok=""; inq=0; esc=0' \
+  '  for ((i=0; i<${#line}; i++)); do c="${line:i:1}"' \
+  '    if [ "$esc" = 1 ]; then tok+="$c"; esc=0' \
+  '    elif [ "$c" = "\\" ]; then esc=1' \
+  '    elif [ "$c" = "\"" ]; then inq=$((1 - inq))' \
+  '    elif [ "$c" = " " ] && [ "$inq" = 0 ]; then [ -n "$tok" ] && args+=("$tok"); tok=""' \
+  '    else tok+="$c"; fi' \
+  '  done' \
+  '  [ -n "$tok" ] && args+=("$tok")' \
+  '  set -- "${args[@]}"' \
+  'fi' \
   'verb="${1:-}"; shift || true' \
   'service=""; value=""; bare_w=0' \
   'while [ $# -gt 0 ]; do' \
@@ -42,6 +55,8 @@ printf '%s\n' '#!/usr/bin/env bash' \
   '      IFS= read -r confirm || true' \
   '      [ "$value" = "$confirm" ] || exit 46' \
   '      printf "prompt-store\n" >> "$HUSH_TEST_SECURITY_LOG"' \
+  '    elif [ "$from_stdin" -eq 1 ]; then' \
+  '      printf "stdin-store\n" >> "$HUSH_TEST_SECURITY_LOG"' \
   '    else' \
   '      printf "argv-store\n" >> "$HUSH_TEST_SECURITY_LOG"' \
   '    fi' \
@@ -80,7 +95,7 @@ chmod +x "$STUB/uname" "$STUB/security" "$STUB/lpass"
 printf '%s' "$SENTINEL" | run_hush set sync-a --pipe >/dev/null 2>&1
 run_hush mint sync-b --bytes 4 >/dev/null 2>&1
 printf '%s' 'login-only-test-value' | run_hush set sync-auth --pipe >/dev/null 2>&1
-grep -qF 'prompt-store' "$HUSH_TEST_SECURITY_LOG" && ok "single-line macOS stores use stdin prompt" || bad "single-line macOS store used argv"
+grep -qF 'stdin-store' "$HUSH_TEST_SECURITY_LOG" && ok "single-line macOS stores go over stdin (security -i)" || bad "single-line macOS store used argv"
 grep -qF 'argv-store' "$HUSH_TEST_SECURITY_LOG" && bad "single-line secret reached security argv" || ok "single-line secret stays out of security argv"
 
 : > "$HUSH_LPASS_LOG"

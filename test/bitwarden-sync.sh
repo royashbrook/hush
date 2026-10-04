@@ -28,6 +28,19 @@ printf '%s\n' '#!/bin/sh' \
 
 printf '%s\n' '#!/usr/bin/env bash' \
   'set -u' \
+  'from_stdin=0' \
+  'if [ "${1:-}" = -i ]; then' \
+  '  IFS= read -r line || true; from_stdin=1; args=(); tok=""; inq=0; esc=0' \
+  '  for ((i=0; i<${#line}; i++)); do c="${line:i:1}"' \
+  '    if [ "$esc" = 1 ]; then tok+="$c"; esc=0' \
+  '    elif [ "$c" = "\\" ]; then esc=1' \
+  '    elif [ "$c" = "\"" ]; then inq=$((1 - inq))' \
+  '    elif [ "$c" = " " ] && [ "$inq" = 0 ]; then [ -n "$tok" ] && args+=("$tok"); tok=""' \
+  '    else tok+="$c"; fi' \
+  '  done' \
+  '  [ -n "$tok" ] && args+=("$tok")' \
+  '  set -- "${args[@]}"' \
+  'fi' \
   'verb="${1:-}"; shift || true' \
   'service=""; value=""; bare_w=0' \
   'while [ $# -gt 0 ]; do' \
