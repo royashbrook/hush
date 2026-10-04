@@ -55,6 +55,22 @@ Store backends are auto-detected:
 - **anything else** → no built-in backend, but **keep the contract** and use your platform's secret
   store (see *Other platforms* below).
 
+### opt-in read-only Bash file
+
+For credentials already held in a trusted local Bash file, set `HUSH_BACKEND=file` and
+`HUSH_FILE=/path/to/credentials.sh` (default `~/.secrets`). Leave `HUSH_BACKEND` unset for normal
+OS storage. Use `list`, `run`, `pipe`, `exec`, file-only consumers, or explicitly requested sync.
+`set`, `mint`/`gen`, `rm`, and `rename`/`mv` are refused; edit the source file yourself.
+
+Names are Bash identifiers (`PROJECT_TOKEN`) declared with `NAME=value` or `export NAME=value`.
+Use Bash quoting, without spaces around `=`. This file is one flat store: `HUSH_NS` and manifest
+`ns=` do not partition it. `list` reads declaration names without executing the file; fetches
+source it in a subshell and inject only the selected values. Other variables stay isolated.
+
+The file must be trusted: sourcing executes Bash code, rather than parsing dotenv data. Hush
+suppresses source output but cannot contain its side effects. It provides no encryption or
+permission changes for the plaintext source. See the README for examples and isolated tests.
+
 ### naming convention: one namespace, project-prefixed names
 
 **Keep the default `hush` namespace and prefix each secret's NAME by project**, `blame-cf-token`,

@@ -151,6 +151,12 @@ fi
 [ -z "$STUB" ] || rm -rf "$STUB" 2>/dev/null
 "$HUSH" rm t-empty >/dev/null 2>&1; "$HUSH" rm t-x >/dev/null 2>&1
 
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/file-backend.mjs"; then
+  ok "isolated read-only file backend suite"
+else
+  bad "isolated read-only file backend suite"
+fi
+
 if bash "$(dirname "${BASH_SOURCE[0]:-$0}")/lastpass-sync.sh"; then
   ok "isolated LastPass sync suite"
 else
