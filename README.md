@@ -61,6 +61,38 @@ Backends: macOS Keychain, Linux libsecret (`secret-tool`), and Windows DPAPI (vi
 built in. On other platforms keep the same contract with your OS secret store (see [SKILL.md](SKILL.md)).
 Cross-OS tested in CI (manual `workflow_dispatch`, all three runners).
 
+## read an existing Bash credentials file (opt-in)
+
+If you already keep credentials in a trusted local Bash file, use it through hush without
+copying them into another store:
+
+```sh
+HUSH_BACKEND=file HUSH_FILE=/path/to/credentials.sh hush list
+HUSH_BACKEND=file HUSH_FILE=/path/to/credentials.sh hush run TOKEN=PROJECT_TOKEN -- some-cmd
+HUSH_BACKEND=file HUSH_FILE=/path/to/credentials.sh hush pipe PROJECT_TOKEN -- some-cmd
+```
+
+`HUSH_FILE` defaults to `~/.secrets`. Leave `HUSH_BACKEND` unset to keep using the normal OS
+store. File mode is read-only: `set`, `mint`/`gen`, `rm`, and `rename`/`mv` fail before reading
+values or prompting. `run`, `pipe`, `.hush` manifests, file-only consumers, and explicit sync
+commands can read from it. Sync still writes to the destination you select.
+
+The source uses `NAME=value` or `export NAME=value` assignments, with Bash quoting and no spaces
+around `=`. Names are shell identifiers such as `PROJECT_TOKEN`, rather than hyphenated names.
+`list` reads those declaration names without sourcing the file. `HUSH_NS` does not separate a
+file into namespaces; use a different `HUSH_FILE` for a different store.
+
+Fetching a value sources the file as Bash in a subshell, suppresses its output, and transfers
+only the requested value to hush. Other file variables and shell changes stay in the subshell.
+Empty values and trailing newlines are preserved. Inherited environment variables are not a
+fallback for missing declarations.
+
+This is **Bash sourcing, not a dotenv parser**: the file can execute shell code. Use only a file
+you trust, preferably containing simple assignments, and protect it like any plaintext
+credentials file. Hush does not encrypt it, change its permissions, or restrict what its code
+can do. Run `node test/file-backend.mjs` for isolated tests using fake credentials and mocked
+OS tools.
+
 ## maintenance (opt-in)
 
 `hush doctor` checks local installation drift and backup health without opening the secret store.

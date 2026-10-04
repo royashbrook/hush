@@ -14,6 +14,7 @@
 #   macOS    -> Keychain (`security`)
 #   Linux    -> libsecret (`secret-tool`)
 #   Windows  -> DPAPI per-user encrypted store via PowerShell (win/hush-backend.ps1)
+# Opt-in HUSH_BACKEND=file reads an existing trusted Bash file without changing it.
 # Namespace via HUSH_NS (default: hush) prefixes every item so a human can find them.
 # The store itself is the source of truth; `list` enumerates it (no separate index to drift).
 #
@@ -44,22 +45,32 @@ case "$(uname -s 2>/dev/null)" in
   MINGW*|MSYS*|CYGWIN*|Windows_NT) BACKEND=windows ;;
   *) BACKEND=unknown ;;
 esac
-if [ "${HUSH_BACKEND:-}" = file ]; then BACKEND=file; fi
-HUSH_FILE="${HUSH_FILE:-$HOME/.secrets}"
+case "${HUSH_BACKEND:-}" in
+  '') ;;
+  file) BACKEND=file
+        HUSH_FILE="${HUSH_FILE:-${HOME:+$HOME/.secrets}}"
+        # Source the same relative file that exists/list validate, never a PATH namesake.
+        case "$HUSH_FILE" in ''|/*|./*|../*) ;; *) HUSH_FILE="./$HUSH_FILE" ;; esac ;;
+  *) die "unsupported HUSH_BACKEND (leave unset for the OS store, or use file)" ;;
+esac
 
 svc() { printf '%s:%s' "$NS" "$1"; }
 
-# Local read-only bridge for an existing shell secrets file. Source only in a
-# command substitution, so the selected value is the only one exported to the
-# Hush process; the child command receives only explicitly requested names.
-file_fetch() {
-  local name="$1"
-  case "$name" in ''|[!A-Za-z_]*|*[!A-Za-z0-9_]*) return 1 ;; esac
-  set -a
-  . "$HUSH_FILE" >/dev/null 2>&1 || return 1
-  [ "${!name+x}" ] || return 1
-  printf '%s' "${!name}"
-}
+# This is Bash sourcing, not dotenv parsing: only use a trusted assignment file.
+# Subshell isolation keeps its other variables and shell changes out of the consumer.
+# The extra function frame preserves our positional name even if the file uses set --;
+# using $1 also avoids collisions with secrets named name, __v, or other local variables.
+file_fetch() (
+  case "$1" in ''|[!A-Za-z_]*|*[!A-Za-z0-9_]*) exit 1 ;; esac
+  file_source() { . "$HUSH_FILE"; }
+  file_source >/dev/null 2>&1 || exit 1
+  set +x
+  unset BASH_XTRACEFD 2>/dev/null || true
+  [ "${!1+x}" ] || exit 1
+  # A suffix preserves trailing newlines through command substitution and lets the
+  # caller reject a sourced file that exits early without producing a value.
+  printf '%s.' "${!1}"
+) 2>/dev/null
 
 # locate the windows backend + translate the path for powershell if needed
 ps_backend() {
@@ -73,7 +84,7 @@ winps() { HUSH_NS="$NS" powershell.exe -NoProfile -NonInteractive -ExecutionPoli
 backend_check() {
   case "$BACKEND" in
     mac)     command -v security    >/dev/null 2>&1 || die "the macOS 'security' CLI is required." ;;
-    file)    [ -r "$HUSH_FILE" ] || die "secrets file is not readable: $HUSH_FILE" ;;
+    file)    [ -f "$HUSH_FILE" ] && [ -r "$HUSH_FILE" ] || die "secrets file is not a readable regular file: $HUSH_FILE" ;;
     linux)   command -v secret-tool >/dev/null 2>&1 || die "secret-tool (libsecret) required: apt install libsecret-tools / dnf install libsecret." ;;
     windows) command -v powershell.exe >/dev/null 2>&1 || die "powershell.exe required for the windows backend." ;;
     *)       die "no built-in backend for this platform ($(uname -s 2>/dev/null)). Keep the contract (never print, inject-only, no getter) with your OS secret store. (see SKILL.md)" ;;
@@ -138,7 +149,11 @@ b_fetch() {
   b_exists "$name" || die "no secret named '$name' (try: hush list)"
   case "$BACKEND" in
     mac)     __v="$(security find-generic-password -s "$(svc "$name")" -w 2>/dev/null)" || die "keychain read failed for '$name'" ;;
-    file)    __v="$(file_fetch "$name")" || die "secrets file read failed for '$name'" ;;
+    file)    __v="$(file_fetch "$name")" || die "secrets file read failed for '$name'"
+             case "$__v" in
+               *.) __v="${__v%.}" ;;
+               *) die "secrets file read failed for '$name'" ;;
+             esac ;;
     linux)   __v="$(secret-tool lookup hush "$NS" name "$name" 2>/dev/null)" || die "secret-tool read failed for '$name'" ;;
     windows) __v="$(winps get "$name" 2>/dev/null)" || die "windows read failed for '$name'" ;;
   esac
@@ -270,6 +285,9 @@ hush — a secret store for AI agents. values are never printed.
   hush maintenance --help           opt-in notices and explicit scheduler repair (Node 18+)
 
 Rule: a value is never sent to stdout. There is no `get`. Namespace via HUSH_NS (default hush).
+Opt-in: HUSH_BACKEND=file reads HUSH_FILE (default ~/.secrets), a trusted Bash assignment file.
+Names must be shell identifiers; the file is one flat store, independent of HUSH_NS.
+File mode rejects set/mint/gen/rm/rename/mv; only the selected values reach consumers.
 If a HUMAN needs to read a value, they do it themselves (the agent never prints it):
   macOS  : Keychain Access, search "hush", open "hush:<name>", Show password.
   linux  : the human runs:  secret-tool lookup hush "$HUSH_NS" name <name>
@@ -279,6 +297,11 @@ EOF
 }
 
 cmd="${1:-}"; shift || true
+if [ "$BACKEND" = file ]; then
+  case "$cmd" in
+    set|mint|gen|rm|rename|mv) die "the file backend is read-only; edit the trusted source file yourself" ;;
+  esac
+fi
 case "$cmd" in
   --version|version)
     [ "$#" -eq 0 ] || die 'version takes no arguments'
@@ -292,7 +315,6 @@ case "$cmd" in
     ;;
   set)
     backend_check
-    [ "$BACKEND" != file ] || die "the file backend is read-only; add or change values in $HUSH_FILE"
     name=""
     for a in "$@"; do
       case "$a" in
