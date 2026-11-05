@@ -136,6 +136,8 @@ try {
   install [--directory PATH] [--key-secret NAME] [--keep 30] [--every 6h]
   run | status | remove
 Default destination: iCloud Drive/hush-backups. Requires GnuPG and an existing Hush backup key.
+Retention: --keep is days. The newest backup of each of the last N days, of each of the last 12
+months, and of every year is kept; the rest are pruned after each backup (grandfather-father-son).
 First: hush mint hush-backup-key, then keep a recovery copy outside this Keychain.
 Install checks names/prerequisites without reading values; launchd runs the first backup on load.
 Only ciphertext is written. Remove preserves backups, config, and secrets. Schedule slots use local time.`);

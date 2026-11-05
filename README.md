@@ -192,7 +192,7 @@ npm install -g @royashbrook/hush
 hush mint hush-backup-key  # only if absent; never overwrite an existing recovery key
 # keep a recovery copy outside this machine's Keychain before proceeding
 hush-backup --dry-run
-hush-backup-schedule install --every 6h --keep 30
+hush-backup-schedule install --every 6h --keep 30   # keeps 30 days, 12 months, every year
 hush-backup-schedule status
 ```
 
