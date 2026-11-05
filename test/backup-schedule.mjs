@@ -81,11 +81,36 @@ try {
   assert.deepEqual(files(), [], 'failed encryption must not publish');
   assert.deepEqual(fs.readdirSync(dest), [], 'failed encryption cleans staging ciphertext');
   for (const keep of ['0', '-1', 'wat', '10001']) backup(['--auto'], 1, { HUSH_BACKUP_KEEP: keep });
+  for (const keep of ['0', 'wat']) backup(['--auto'], 1, { HUSH_BACKUP_KEEP_MONTHS: keep });
   backup(['--auto'], 0, { SHELLOPTS: 'xtrace', HUSH_BACKUP_KEEP: '02' });
-  backup(['--auto'], 0, { HUSH_BACKUP_KEEP: '2' });
-  assert.equal(files().length, 2, 'same-second backups do not overwrite');
-  backup(['--auto'], 0, { HUSH_BACKUP_KEEP: '2' });
-  assert.equal(files().length, 2, 'retention bounded');
+  assert.equal(files().length, 1, 'same-day backups keep the newest one (retention is per day, not per file)');
+  // grandfather-father-son on a stamped fixture. the backup that runs adds one file with today's
+  // stamp, so every assertion below holds for any run date on or after 2026-11-05.
+  const stamp = (s) => fs.writeFileSync(path.join(dest, `hush-backup-${s}-fixt.gpg`), 'OLD');
+  const seed = () => {
+    for (const f of files()) fs.rmSync(path.join(dest, f));
+    stamp('2024-03-01-124700'); stamp('2024-12-31-124700');
+    for (let m = 1; m <= 12; m++) stamp(`2025-${String(m).padStart(2, '0')}-15-124700`);
+    for (let d = 1; d <= 31; d++) stamp(`2026-10-${String(d).padStart(2, '0')}-124700`);
+    for (let d = 1; d <= 5; d++) stamp(`2026-11-0${d}-124700`);
+    stamp('2026-11-04-081500'); // a second file on a day that cannot be the run date
+    assert.equal(files().length, 51);
+  };
+  const has = (s) => files().some((f) => f.includes(s));
+  seed();
+  backup(['--auto'], 0, { HUSH_BACKUP_KEEP: '30' });
+  assert.ok(files().length >= 41 && files().length <= 43, `30 days + months beyond them + years, got ${files().length}`);
+  assert.ok(!has('2024-03-01'), 'an older file in a closed year goes');
+  assert.ok(has('2024-12-31'), 'the year\'s last file survives as the yearly');
+  assert.ok(!has('2025-01-15'), 'the 14th month back goes');
+  assert.ok(has('2025-12-15'), '2025\'s newest doubles as its yearly');
+  assert.ok(!has('2026-10-01'), 'the 36th day back goes');
+  assert.ok(has('2026-10-31'), 'a day inside the window stays');
+  assert.ok(!has('2026-11-04-081500') && has('2026-11-04-124700'), 'two files one day: the later one stays');
+  seed();
+  backup(['--auto'], 0, { HUSH_BACKUP_KEEP: '1', HUSH_BACKUP_KEEP_MONTHS: '1' });
+  assert.ok(files().length >= 3 && files().length <= 4, `one day, one month, every year, got ${files().length}`);
+  assert.ok(has('2024-12-31') && has('2025-12-15') && !has('2025-11-15') && !has('2026-10-31'), 'yearlies survive the smallest window');
   fs.writeFileSync(path.join(dest, 'unrelated.gpg'), 'keep');
   backup(['--auto'], 0, { HUSH_BACKUP_KEEP: '1' });
   assert.ok(fs.existsSync(path.join(dest, 'unrelated.gpg')), 'retention preserves unrelated files');

@@ -107,7 +107,14 @@ hush-backup --help
 ```
 
 Env knobs: `HUSH_BACKUP_DIR` (dest, default iCloud Drive/hush-backups), `HUSH_BACKUP_KEY` (key name,
-default `hush-backup-key`), `HUSH_BACKUP_KEEP` (retention, default 30).
+default `hush-backup-key`), `HUSH_BACKUP_KEEP` (days, default 30), `HUSH_BACKUP_KEEP_MONTHS` (default 12).
+
+Retention is grandfather-father-son: after each backup the folder keeps the newest file of each of
+the last 30 days that have one, the newest of each of the last 12 months that have one, and the
+newest of every year, for good. One file can fill several slots, so a daily schedule holds at most
+30 + 12 + one per year files. The periods are the ones present in the folder, not the calendar, so
+a gap in the schedule never shortens what is kept. The period comes from the filename stamp, never
+the mtime that cloud sync rewrites. Only files named `hush-backup-<stamp>.gpg` are ever removed.
 
 ### schedule it (macOS)
 
@@ -115,7 +122,7 @@ The npm package includes both commands; no clone or hand-edited plist is needed:
 
 ```sh
 hush-backup --dry-run
-hush-backup-schedule install --every 6h --keep 30
+hush-backup-schedule install --every 6h --keep 30   # --keep is days; months default to 12, years are kept
 hush-backup-schedule status
 hush-backup-schedule run
 hush-backup-schedule remove
