@@ -93,7 +93,7 @@ try {
     for (let m = 1; m <= 12; m++) stamp(`2025-${String(m).padStart(2, '0')}-15-124700`);
     for (let d = 1; d <= 31; d++) stamp(`2026-10-${String(d).padStart(2, '0')}-124700`);
     for (let d = 1; d <= 5; d++) stamp(`2026-11-0${d}-124700`);
-    stamp('2026-11-05-081500');
+    stamp('2026-11-04-081500'); // a second file on a day that cannot be the run date
     assert.equal(files().length, 51);
   };
   const has = (s) => files().some((f) => f.includes(s));
@@ -106,7 +106,7 @@ try {
   assert.ok(has('2025-12-15'), '2025\'s newest doubles as its yearly');
   assert.ok(!has('2026-10-01'), 'the 36th day back goes');
   assert.ok(has('2026-10-31'), 'a day inside the window stays');
-  assert.ok(!has('2026-11-05-081500') && has('2026-11-05-124700'), 'two files one day: the later one stays');
+  assert.ok(!has('2026-11-04-081500') && has('2026-11-04-124700'), 'two files one day: the later one stays');
   seed();
   backup(['--auto'], 0, { HUSH_BACKUP_KEEP: '1', HUSH_BACKUP_KEEP_MONTHS: '1' });
   assert.ok(files().length >= 3 && files().length <= 4, `one day, one month, every year, got ${files().length}`);
