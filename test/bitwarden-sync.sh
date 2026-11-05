@@ -141,6 +141,17 @@ grep -qF "$SENTINEL" "$HUSH_BW_LOG" && bad "value reached Bitwarden argv/log" ||
 printf '%s' "$out" | grep -qF "$SENTINEL" && bad "value leaked in output" || ok "success output does not leak"
 
 : > "$HUSH_BW_LOG"
+out="$(run_hush sync bitwarden sync-a 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'unchanged sync-a' && ok "repeat run skips unchanged value" || bad "unchanged comparison failed"
+grep -Eq '^bw:(create|edit) ' "$HUSH_BW_LOG" && bad "unchanged value was uploaded" || ok "unchanged run makes no write"
+
+export HUSH_BW_EXPECT="$SENTINEL-rotated"
+printf '%s' "$HUSH_BW_EXPECT" | run_hush set sync-a --pipe >/dev/null 2>&1
+: > "$HUSH_BW_LOG"
+out="$(run_hush sync bitwarden sync-a 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && grep -q '^bw:edit item item-1$' "$HUSH_BW_LOG" && ok "changed value is uploaded" || bad "changed value was skipped"
+
+: > "$HUSH_BW_LOG"
 out="$(run_hush sync bitwarden sync-b 2>&1)"; rc=$?
 [ "$rc" -eq 0 ] && grep -q '^bw:create item$' "$HUSH_BW_LOG" && ok "missing item is created" || bad "create failed (got: $out)"
 

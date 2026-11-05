@@ -238,6 +238,9 @@ hush — a secret store for AI agents. values are never printed.
                                    requires an unlocked BW_SESSION. with no names, sync all except
                                    auth secrets. options: --folder <name> (default: hush),
                                    --exclude <name> (repeatable), --dry-run
+  hush sync azurekv --vault <name> [options] [name ...]
+                                   copy changed secrets using the existing az login. options:
+                                   --exclude <name> (repeatable), --dry-run. Node 18+ required.
   hush file <name> <path>          write the value to a 0600 file (refuses inside a git repo)
   hush list                        list NAMES only, read straight from the store (never values)
   hush rename <old> <new> [--force]   (alias: mv)
@@ -365,8 +368,8 @@ case "$cmd" in
     ;;
   sync)
     backend_check
-    target="${1:-}"; [ -n "$target" ] || die "sync: missing target (supported: lastpass, keepass, bitwarden)"; shift
-    case "$target" in lastpass|keepass|bitwarden) ;; *) die "sync: unsupported target '$target' (supported: lastpass, keepass, bitwarden)" ;; esac
+    target="${1:-}"; [ -n "$target" ] || die "sync: missing target (supported: lastpass, keepass, bitwarden, azurekv)"; shift
+    case "$target" in lastpass|keepass|bitwarden|azurekv) ;; *) die "sync: unsupported target '$target' (supported: lastpass, keepass, bitwarden, azurekv)" ;; esac
 
     if [ "$target" = lastpass ]; then
     group="hush"; dry_run=0; names=(); excludes=()
@@ -584,6 +587,60 @@ case "$cmd" in
         printf 'hush: created KeePass database %s. keep its password somewhere recoverable.\n' "$database"
       fi
       unset __db
+    elif [ "$target" = azurekv ]; then
+      vault=""; dry_run=0; names=(); excludes=()
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --vault|--exclude)
+            [ $# -ge 2 ] || die "sync azurekv: $1 needs a value"
+            if [ "$1" = --vault ]; then vault="$2"; else excludes+=("$2"); fi
+            shift 2 ;;
+          --dry-run) dry_run=1; shift ;;
+          --) shift; while [ $# -gt 0 ]; do names+=("$1"); shift; done ;;
+          -*) die "sync azurekv: unknown option '$1'" ;;
+          *) names+=("$1"); shift ;;
+        esac
+      done
+      [[ "$vault" =~ ^[a-zA-Z][a-zA-Z0-9-]{1,22}[a-zA-Z0-9]$ ]] || die "sync azurekv: --vault needs a vault name, not a URL"
+      if [ "${#names[@]}" -eq 0 ]; then
+        while IFS= read -r name; do [ -n "$name" ] && names+=("$name"); done < <(b_list)
+      fi
+      [ "${#names[@]}" -gt 0 ] || die "sync azurekv: no hush secrets found in namespace '$NS'"
+      selected=()
+      for name in "${names[@]}"; do
+        skip=0
+        if [ "${#excludes[@]}" -gt 0 ]; then
+          for excluded in "${excludes[@]}"; do [ "$name" = "$excluded" ] && skip=1; done
+        fi
+        [ "$skip" -eq 1 ] || selected+=("$name")
+      done
+      [ "${#selected[@]}" -gt 0 ] || { printf 'hush: no Azure sync candidates remain after exclusions.\n'; exit 0; }
+      for name in "${selected[@]}"; do
+        # No case-folding or underscore substitution: two local names must never alias one backup.
+        [[ "$name" =~ ^[a-z0-9-]{1,127}$ ]] || die "sync azurekv: names must be 1-127 lowercase letters, digits or hyphens (rename locally first)"
+        b_exists "$name" || die "sync azurekv: no secret named '$name' (try: hush list)"
+      done
+      az="${HUSH_AZURE_CLI:-az}"; node="${HUSH_NODE:-node}"
+      suffix="$("$az" cloud show --query suffixes.keyvaultDns -o tsv 2>/dev/null)" || die "sync azurekv: could not read the Azure cloud"
+      suffix="${suffix%$'\r'}"
+      case "$suffix" in .vault.azure.net|.vault.azure.cn|.vault.usgovcloudapi.net) ;; *) die "sync azurekv: unsupported Azure Key Vault cloud" ;; esac
+      "$az" account show --query id -o tsv >/dev/null 2>&1 || die "sync azurekv: Azure is not logged in (run: az login)"
+      if [ "$dry_run" -eq 1 ]; then
+        for name in "${selected[@]}"; do printf 'hush: would compare and sync %s -> Azure %s/%s (not uploaded).\n' "$name" "$vault" "$name"; done
+        exit 0
+      fi
+      __token="$("$az" account get-access-token --resource "https://${suffix#.}" --query accessToken -o tsv 2>/dev/null)" || die "sync azurekv: Azure token failed (check az login)"
+      __token="${__token%$'\r'}"
+      [ -n "$__token" ] || die "sync azurekv: Azure returned no access token"
+      for name in "${selected[@]}"; do
+        b_fetch "$name" __val
+        if ! printf '%s' "$__val" | NODE_DEBUG= HUSH_AZURE_TOKEN="$__token" "$node" "$HERE/helpers/hush-azure-sync.mjs" "$vault$suffix" "$name"; then
+          unset __val __token
+          die "sync azurekv: failed '$vault/$name'; no value was shown"
+        fi
+        unset __val
+      done
+      unset __token
     else
       folder="hush"; dry_run=0; names=(); excludes=()
       auth_names=(bitwarden-client-id bitwarden-client-secret bitwarden-master-password)
@@ -700,6 +757,16 @@ case "$cmd" in
             die "sync bitwarden: Bitwarden rejected create '$folder/$name'; no value was shown"
           fi
         else
+          same_rc=0
+          "$bw" get item "${ids[$i]}" 2>/dev/null |
+            HUSH_BITWARDEN_VALUE="$__val" "$node" "$bw_json" unchanged "$name" "$folder_id" || same_rc=$?
+          if [ "$same_rc" -eq 0 ]; then
+            unset __val
+            printf 'hush: unchanged %s -> Bitwarden %s/%s (value not shown).\n' "$name" "$folder" "$name"
+            i=$((i + 1))
+            continue
+          fi
+          [ "$same_rc" -eq 2 ] || { unset __val; die "sync bitwarden: could not compare '$folder/$name'"; }
           if ! "$bw" get item "${ids[$i]}" 2>/dev/null |
             HUSH_BITWARDEN_VALUE="$__val" "$node" "$bw_json" item-update "$name" "$folder_id" |
             "$bw" edit item "${ids[$i]}" >/dev/null 2>&1; then

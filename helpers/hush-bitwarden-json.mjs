@@ -81,4 +81,12 @@ if (command === 'item-create' || command === 'item-update') {
   process.exit(0);
 }
 
+if (command === 'unchanged') {
+  const [name, folderId] = args;
+  if (!Object.hasOwn(process.env, 'HUSH_BITWARDEN_VALUE')) die('missing protected item value');
+  const value = json(input, 'existing item');
+  if (value?.name !== name || String(value.folderId || '') !== folderId) die('item identity changed');
+  process.exit(value.type === 1 && value.login?.password === process.env.HUSH_BITWARDEN_VALUE ? 0 : 2);
+}
+
 die('unknown command');
