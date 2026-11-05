@@ -129,6 +129,7 @@ hush sync lastpass [name ...]            # upsert selected names, or all names w
 hush sync lastpass --exclude <name>       # keep a local-only name out of bulk sync; repeatable
 hush sync keepass --database <file.kdbx> --db-secret <name> [name ...]
 hush sync bitwarden [name ...]           # requires an unlocked BW_SESSION
+hush sync azurekv --vault <name> [name ...] # existing az login, changed values only
 hush list                                # NAMES only, never values
 hush rename <old> <new>                  # move to a new name (value moved INTERNALLY, never re-asked)
 hush rm   <name>                         # delete
@@ -231,9 +232,20 @@ hush sync bitwarden --folder backups foo
 hush sync bitwarden --exclude local-only
 ~~~
 
-It creates missing login items, updates unique items, and fails closed on duplicate exact names in
+It creates missing login items, updates unique items only when the password differs, and fails closed on duplicate exact names in
 the target folder. Existing JSON and encoded create/edit bodies move through pipes, never temp files
 or argv. The core uses Bash plus Node. Scheduling currently targets macOS launchd.
+
+For Azure Key Vault, use `hush sync azurekv --vault <name> --dry-run [name ...]`, then the same
+command without `--dry-run` for an authorized copy. It uses the existing `az login` and Node 18+.
+Omit names for all secrets, or repeat `--exclude <name>`. Names must already be lowercase
+letters, digits and hyphens (1-127 characters). No lossy renaming is performed.
+The helper compares remote values internally and writes only missing or changed secrets. It uses
+Azure CLI for auth and HTTPS for the values, keeping them off argv and disk. No cursor is stored.
+Read and set permissions are required. Dry-run does not prove vault access. Failures exit nonzero
+without provider bodies or values. Run one sync at a time. Retrying is safe, and local deletion
+never deletes remotely. Public Azure, US Government and China clouds are supported.
+See [the Azure section](README.md#sync-to-azure-key-vault) for usage and limits.
 
 > **Escape hatch, `hush file <name> <path>`.** A few tools can *only* read a credential from a file
 > path (a service-account JSON, a cert, a kubeconfig). For those, and only those, `hush file` writes a

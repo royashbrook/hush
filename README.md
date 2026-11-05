@@ -268,7 +268,8 @@ hush sync bitwarden --folder backups api-key deploy-key
 hush sync bitwarden --exclude local-only
 ~~~
 
-Missing login items are created and unique items are updated. Exact duplicate names in the target
+Missing login items are created. Unique items are updated only when their password differs.
+Comparison stays inside the helper, with no fingerprint file or cursor. Exact duplicate names in the target
 folder fail closed. Existing item JSON flows directly from bw into the JSON transformer, and encoded
 create/edit bodies flow directly into bw over stdin. Passwords never enter argv, stdout, logs, or
 temp files. The three default Bitwarden auth secrets are always excluded. Bitwarden automatically
@@ -277,6 +278,38 @@ pushes successful create and edit changes to the server.
 The core sync is Bash plus Node and follows the platforms supported by hush and bw. The included
 scheduler currently installs a macOS LaunchAgent. hush-bitwarden-schedule remove unloads it while
 retaining the non-secret config and hush credentials.
+
+## sync to Azure Key Vault
+
+```sh
+az login
+hush sync azurekv --vault example-vault --dry-run api-key
+hush sync azurekv --vault example-vault api-key
+hush sync azurekv --vault example-vault --exclude local-only
+```
+
+Uses the existing Azure CLI login and Node 18+. No new credential or scheduler is installed.
+Omit names to select all local secrets, or repeat `--exclude` to leave names local.
+Names must already use 1-127 lowercase letters, digits or hyphens. Hush refuses other names
+instead of changing underscores or case and accidentally overwriting a different backup.
+
+Azure CLI supplies the short-lived token through
+[`az account get-access-token`](https://learn.microsoft.com/en-us/cli/azure/account#az-account-get-access-token).
+The helper compares the current value and calls the
+[Key Vault secret API](https://learn.microsoft.com/en-us/rest/api/keyvault/secrets/set-secret/set-secret?view=rest-keyvault-secrets-2025-07-01)
+only if missing or changed. This keeps values out of CLI arguments and plaintext files on every OS.
+Existing tags, content type and enabled/expiry attributes are preserved on an update.
+Unchanged values create no new secret version. No local cursor, digest or secret state is saved.
+The account needs `secrets/get` and `secrets/set`. Public Azure, US Government and China clouds
+are selected from `az cloud show`. Custom clouds are not supported.
+
+`--dry-run` checks the selection and Azure login, but does not read remote values, get a token
+or write anything. It is not proof of vault access. Real failures exit nonzero and report the
+operation and HTTP status when available, never the response body or a secret value.
+Run one sync at a time. A failed run may have copied earlier names, and retrying compares again.
+Remote changes or deletions are repaired on the next sync. Local deletion never deletes remotely.
+This adds no rotation, permissions, remote deletion or vault-policy management.
+KeePass and encrypted file backups keep their existing whole-file behavior.
 
 ## not a vault
 

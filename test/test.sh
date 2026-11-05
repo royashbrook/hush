@@ -187,6 +187,12 @@ else
   bad "isolated Bitwarden sync suite"
 fi
 
+if node "$(dirname "${BASH_SOURCE[0]:-$0}")/azure-sync.mjs"; then
+  ok "isolated Azure sync suite"
+else
+  bad "isolated Azure sync suite"
+fi
+
 if node "$(dirname "${BASH_SOURCE[0]:-$0}")/schedule-platform.mjs" bitwarden; then
   ok "isolated Bitwarden schedule suite"
 else

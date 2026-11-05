@@ -18,6 +18,7 @@
     "helpers/RESTORE-hush-backup.md",
     "helpers/README.md",
     "helpers/hush-bitwarden-json.mjs",
+    "helpers/hush-azure-sync.mjs",
     "helpers/hush-bitwarden-schedule.mjs",
     "helpers/hush-lastpass-schedule.mjs",
     "helpers/hush-keepass-schedule.mjs",

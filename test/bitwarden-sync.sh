@@ -11,7 +11,7 @@ export HUSH_SECURITY_LOG="$STUB/security.log"
 export HUSH_BW_LOG="$STUB/bw.log"
 export HUSH_BW_STATE="$STUB/bw-state.json"
 export HUSH_NS="hush-bitwarden-test-$$"
-export HUSH_BITWARDEN="$STUB/bw"
+export HUSH_BITWARDEN="$STUB/bw.mjs"
 export HUSH_BITWARDEN_JSON="$ROOT/helpers/hush-bitwarden-json.mjs"
 SENTINEL="BW-S3NT-$$-never-log-this"
 fails=0
@@ -66,7 +66,7 @@ printf '%s\n' '#!/usr/bin/env bash' \
   '  *) exit 45 ;;' \
   'esac' > "$STUB/security"
 
-cat > "$STUB/bw" <<'NODE'
+cat > "$STUB/bw.mjs" <<'NODE'
 #!/usr/bin/env node
 import fs from 'node:fs';
 const args = process.argv.slice(2);
@@ -116,7 +116,7 @@ else if (verb === 'list' && noun === 'folders') {
 } else process.exit(54);
 NODE
 
-chmod +x "$STUB/uname" "$STUB/security" "$STUB/bw"
+chmod +x "$STUB/uname" "$STUB/security" "$STUB/bw.mjs"
 printf '%s' '{"folders":[{"id":"folder-1","name":"hush"}],"items":[{"id":"item-1","name":"sync-a","folderId":"folder-1","type":1,"login":{"password":"REMOTE-OLD-NEVER-LOG"}}]}' > "$HUSH_BW_STATE"
 export HUSH_BW_EXPECT="$SENTINEL"
 
@@ -139,6 +139,17 @@ out="$(run_hush sync bitwarden sync-a 2>&1)"; rc=$?
 grep -q '^bw:edit item item-1$' "$HUSH_BW_LOG" && grep -q '^value-ok$' "$HUSH_BW_LOG" && ok "unique item is safely edited" || bad "edit contract wrong"
 grep -qF "$SENTINEL" "$HUSH_BW_LOG" && bad "value reached Bitwarden argv/log" || ok "value stays out of Bitwarden argv/log"
 printf '%s' "$out" | grep -qF "$SENTINEL" && bad "value leaked in output" || ok "success output does not leak"
+
+: > "$HUSH_BW_LOG"
+out="$(run_hush sync bitwarden sync-a 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'unchanged sync-a' && ok "repeat run skips unchanged value" || bad "unchanged comparison failed"
+grep -Eq '^bw:(create|edit) ' "$HUSH_BW_LOG" && bad "unchanged value was uploaded" || ok "unchanged run makes no write"
+
+export HUSH_BW_EXPECT="$SENTINEL-rotated"
+printf '%s' "$HUSH_BW_EXPECT" | run_hush set sync-a --pipe >/dev/null 2>&1
+: > "$HUSH_BW_LOG"
+out="$(run_hush sync bitwarden sync-a 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && grep -q '^bw:edit item item-1$' "$HUSH_BW_LOG" && ok "changed value is uploaded" || bad "changed value was skipped"
 
 : > "$HUSH_BW_LOG"
 out="$(run_hush sync bitwarden sync-b 2>&1)"; rc=$?
