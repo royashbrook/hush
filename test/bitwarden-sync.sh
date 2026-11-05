@@ -11,7 +11,7 @@ export HUSH_SECURITY_LOG="$STUB/security.log"
 export HUSH_BW_LOG="$STUB/bw.log"
 export HUSH_BW_STATE="$STUB/bw-state.json"
 export HUSH_NS="hush-bitwarden-test-$$"
-export HUSH_BITWARDEN="$STUB/bw"
+export HUSH_BITWARDEN="$STUB/bw.mjs"
 export HUSH_BITWARDEN_JSON="$ROOT/helpers/hush-bitwarden-json.mjs"
 SENTINEL="BW-S3NT-$$-never-log-this"
 fails=0
@@ -66,7 +66,7 @@ printf '%s\n' '#!/usr/bin/env bash' \
   '  *) exit 45 ;;' \
   'esac' > "$STUB/security"
 
-cat > "$STUB/bw" <<'NODE'
+cat > "$STUB/bw.mjs" <<'NODE'
 #!/usr/bin/env node
 import fs from 'node:fs';
 const args = process.argv.slice(2);
@@ -116,7 +116,7 @@ else if (verb === 'list' && noun === 'folders') {
 } else process.exit(54);
 NODE
 
-chmod +x "$STUB/uname" "$STUB/security" "$STUB/bw"
+chmod +x "$STUB/uname" "$STUB/security" "$STUB/bw.mjs"
 printf '%s' '{"folders":[{"id":"folder-1","name":"hush"}],"items":[{"id":"item-1","name":"sync-a","folderId":"folder-1","type":1,"login":{"password":"REMOTE-OLD-NEVER-LOG"}}]}' > "$HUSH_BW_STATE"
 export HUSH_BW_EXPECT="$SENTINEL"
 
