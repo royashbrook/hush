@@ -34,7 +34,7 @@ while [ -L "$SOURCE" ]; do
   case "$SOURCE" in /*) ;; *) SOURCE="$SOURCE_DIR/$SOURCE" ;; esac
 done
 HERE="$(cd "$(dirname "$SOURCE")" && pwd)"
-HUSH_VERSION=1.7.0
+HUSH_VERSION=1.8.0
 
 die() { printf 'hush: %s\n' "$1" >&2; exit 1; }
 
